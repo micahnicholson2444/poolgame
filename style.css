@@ -283,3 +283,39 @@ canvas#table {
   h1.title { font-size: 2rem; }
   .panel { padding: 24px 20px; }
 }
+@media (pointer: coarse) {
+  #game-screen { gap: 8px; padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
+  #hud { width: 100%; flex-wrap: nowrap; gap: 5px; justify-content: space-between; }
+  .player-chip { padding: 6px 8px; gap: 5px; font-size: clamp(.62rem, 2.4vw, .85rem); white-space: nowrap; }
+  .chip-dot { width: 10px; height: 10px; flex: none; }
+  #center-message { flex: 1; font-size: clamp(.65rem, 2.5vw, .9rem); min-height: 0; }
+  #table-wrap { flex: 0 1 auto; min-width: 0; }
+  #table { width: min(calc(100vw - 66px), calc((100dvh - 150px) * 1.833)); max-height: calc(100dvh - 150px); }
+  #mobile-shot { display: flex; width: 42px; align-self: center; height: min(52vh, 280px); min-height: 150px; flex-direction: column; align-items: center; justify-content: space-between; }
+  #game-screen { flex-direction: row; flex-wrap: wrap; align-content: center; }
+  #hud, #footer-controls { flex-basis: 100%; }
+  #hud { order: 0; }
+  #table-wrap { order: 1; }
+  #mobile-shot { order: 2; }
+  #footer-controls { order: 3; justify-content: center; }
+  .power-label, .power-hint { color: var(--brass-bright); font: 700 9px/1.2 Arial, sans-serif; text-align: center; }
+  .power-hint { opacity: .75; font-size: 8px; }
+  #cue-power { position: relative; flex: 1; width: 100%; max-height: 205px; min-height: 100px; display: flex; align-items: center; justify-content: center; touch-action: none; }
+  .power-track { position: absolute; width: 5px; height: 100%; border-radius: 5px; background: linear-gradient(#c9a24b, #50351d); box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+  #mobile-cue { position: absolute; left: 50%; top: 4px; transform: translateX(-50%) rotate(90deg); height: 38px; width: 12px; color: var(--brass-bright); font: 700 32px/32px Arial,sans-serif; text-shadow: 0 2px 3px #000; pointer-events: none; }
+  #mobile-shot.active #mobile-cue { color: #fff1b5; }
+  #power-meter { display: none; }
+}
+@media (pointer: coarse) and (orientation: portrait) {
+  #game-screen { gap: 6px; }
+  #table { width: min(calc(100vw - 58px), calc((100dvh - 175px) * 1.833)); }
+  #mobile-shot { height: min(44vh, 240px); }
+}
+@media (max-height: 430px) and (pointer: coarse) {
+  #game-screen { gap: 3px; padding: 4px; }
+  #table { width: min(calc(100vw - 58px), calc((100dvh - 72px) * 1.833)); }
+  #mobile-shot { height: 38vh; min-height: 100px; }
+  .power-label, .power-hint { display: none; }
+}
+
+#mobile-shot { display: none; }

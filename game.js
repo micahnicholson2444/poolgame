@@ -421,6 +421,11 @@ function ballFill(color) {
 
 let aiming = false;
 let aimCurrent = { x: 0, y: 0 };
+const touchControls = matchMedia('(pointer: coarse)').matches;
+let mobileAimDir = null;
+let mobilePowerStartY = 0;
+let mobilePowerPull = 0;
+let mobilePowerDragging = false;
 
 /* Ray from (ox,oy) in direction (dx,dy) — find the first object ball the
    cue ball's centre would touch, and the point of contact (ghost-ball
@@ -501,13 +506,14 @@ function traceGuidePath(ox, oy, dirx, diry) {
 }
 
 function drawAim() {
-  if (!aiming) return;
+  if (!aiming && !(touchControls && mobileAimDir)) return;
   const cb = cueBall();
   if (!cb || cb.potted) return;
   const dx = aimCurrent.x - cb.x, dy = aimCurrent.y - cb.y;
   const dist = Math.hypot(dx, dy) || 1;
-  const pull = Math.min(dist, MAX_PULL);
-  const dirx = -dx / dist, diry = -dy / dist;
+  const pull = touchControls ? mobilePowerPull : Math.min(dist, MAX_PULL);
+  const dirx = touchControls && mobileAimDir ? mobileAimDir.x : -dx / dist;
+  const diry = touchControls && mobileAimDir ? mobileAimDir.y : -dy / dist;
 
   const { segments, ballHit: hit } = traceGuidePath(cb.x, cb.y, dirx, diry);
 
@@ -728,38 +734,48 @@ function canvasPos(evt) {
   return { x: cx, y: cy };
 }
 
+function shootWithPower(dirx, diry, pull) {
+  const speed = (Math.min(pull, MAX_PULL) / MAX_PULL) * MAX_SPEED;
+  if (G.mode === 'guest') { G.moving = true; conn && conn.send({ type: 'shoot', dx: dirx, dy: diry, speed }); }
+  else performLocalShot({ x: dirx, y: diry }, speed);
+  mobileAimDir = null; mobilePowerPull = 0; render();
+}
 canvas.addEventListener('pointerdown', (e) => {
   if (!canAim()) return;
-  aiming = true;
-  aimCurrent = canvasPos(e);
-  render();
+  if (touchControls) { canvas.setPointerCapture(e.pointerId); aiming = true; aimCurrent = canvasPos(e); return; }
+  aiming = true; aimCurrent = canvasPos(e); render();
 });
 window.addEventListener('pointermove', (e) => {
+  if (mobilePowerDragging) {
+    mobilePowerPull = Math.max(0, Math.min(MAX_PULL, (e.clientY - mobilePowerStartY) * 2.6));
+    document.getElementById('mobile-cue').style.top = `${4 + mobilePowerPull / MAX_PULL * 62}%`;
+    document.getElementById('cue-power').setAttribute('aria-valuenow', String(Math.round(mobilePowerPull / MAX_PULL * 100)));
+    render(); return;
+  }
   if (!aiming) return;
   aimCurrent = canvasPos(e);
+  if (touchControls) { const cb = cueBall(); const dx = cb.x - aimCurrent.x, dy = cb.y - aimCurrent.y, d = Math.hypot(dx, dy) || 1; mobileAimDir = { x: dx / d, y: dy / d }; }
   render();
 });
 window.addEventListener('pointerup', () => {
+  if (mobilePowerDragging) {
+    mobilePowerDragging = false; document.getElementById('mobile-shot').classList.remove('active');
+    if (canAim() && mobileAimDir && mobilePowerPull >= 5) shootWithPower(mobileAimDir.x, mobileAimDir.y, mobilePowerPull);
+    mobilePowerPull = 0; document.getElementById('mobile-cue').style.top = '4px'; document.getElementById('cue-power').setAttribute('aria-valuenow', '0'); render(); return;
+  }
   if (!aiming) return;
   aiming = false;
+  if (touchControls) { const cb = cueBall(); const dx = cb.x - aimCurrent.x, dy = cb.y - aimCurrent.y, d = Math.hypot(dx, dy); if (d > 5) mobileAimDir = { x: dx / d, y: dy / d }; render(); return; }
   document.getElementById('power-meter').classList.remove('show');
-  const cb = cueBall();
-  const dx = aimCurrent.x - cb.x, dy = aimCurrent.y - cb.y;
-  const dist = Math.hypot(dx, dy);
+  const cb = cueBall(); const dx = aimCurrent.x - cb.x, dy = aimCurrent.y - cb.y, dist = Math.hypot(dx, dy);
   if (dist < 8) { render(); return; }
-  const pull = Math.min(dist, MAX_PULL);
-  const dirx = -dx / dist, diry = -dy / dist;
-  const speed = (pull / MAX_PULL) * MAX_SPEED;
-
-  if (G.mode === 'guest') {
-    G.moving = true; // lock local aiming until the host reports the result
-    conn && conn.send({ type: 'shoot', dx: dirx, dy: diry, speed });
-  } else {
-    performLocalShot({ x: dirx, y: diry }, speed);
-  }
-  render();
+  shootWithPower(-dx / dist, -dy / dist, Math.min(dist, MAX_PULL));
 });
-
+document.getElementById('cue-power').addEventListener('pointerdown', (e) => {
+  if (!touchControls || !canAim() || !mobileAimDir) return;
+  e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); mobilePowerDragging = true; mobilePowerStartY = e.clientY;
+  document.getElementById('mobile-shot').classList.add('active');
+});
 /* =========================================================
    HUD
    ========================================================= */

@@ -113,61 +113,76 @@ function activeBalls() { return G.balls.filter(b => !b.potted); }
 
 function stepPhysics() {
   const balls = activeBalls();
-  for (const b of balls) {
-    b.x += b.vx;
-    b.y += b.vy;
-    b.vx *= FRICTION;
-    b.vy *= FRICTION;
-    if (Math.hypot(b.vx, b.vy) < MIN_SPEED) { b.vx = 0; b.vy = 0; }
-  }
 
-  // pocket capture (checked before wall bounce so balls can fall in)
-  for (const b of balls) {
-    if (b.potted) continue;
-    for (const p of POCKETS) {
-      if (Math.hypot(b.x - p.x, b.y - p.y) < POCKET_R) {
-        b.potted = true;
-        b.vx = 0; b.vy = 0;
-        b.x = -1000; b.y = -1000;
-        G.shotEvents.potted.push(b.color);
-        break;
+  // Sub-step the motion so fast balls can't tunnel past the exact contact
+  // point before a collision is detected — that overshoot was throwing off
+  // both the simulated bounce and the predicted aim line.
+  const topSpeed = balls.reduce((m, b) => Math.max(m, Math.hypot(b.vx, b.vy)), 0);
+  const subSteps = Math.min(10, Math.max(1, Math.ceil(topSpeed / 2)));
+
+  for (let s = 0; s < subSteps; s++) {
+    for (const b of balls) {
+      if (b.potted) continue;
+      b.x += b.vx / subSteps;
+      b.y += b.vy / subSteps;
+    }
+
+    // pocket capture (checked before wall bounce so balls can fall in)
+    for (const b of balls) {
+      if (b.potted) continue;
+      for (const p of POCKETS) {
+        if (Math.hypot(b.x - p.x, b.y - p.y) < POCKET_R) {
+          b.potted = true;
+          b.vx = 0; b.vy = 0;
+          b.x = -1000; b.y = -1000;
+          G.shotEvents.potted.push(b.color);
+          break;
+        }
+      }
+    }
+
+    // wall bounce
+    for (const b of balls) {
+      if (b.potted) continue;
+      if (b.x < INNER.left) { b.x = INNER.left; b.vx = -b.vx * RESTITUTION_WALL; }
+      if (b.x > INNER.right) { b.x = INNER.right; b.vx = -b.vx * RESTITUTION_WALL; }
+      if (b.y < INNER.top) { b.y = INNER.top; b.vy = -b.vy * RESTITUTION_WALL; }
+      if (b.y > INNER.bottom) { b.y = INNER.bottom; b.vy = -b.vy * RESTITUTION_WALL; }
+    }
+
+    // ball-ball collisions
+    const live = balls.filter(b => !b.potted);
+    for (let i = 0; i < live.length; i++) {
+      for (let j = i + 1; j < live.length; j++) {
+        const a = live[i], b = live[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist === 0 || dist >= BALL_R * 2) continue;
+
+        const nx = dx / dist, ny = dy / dist;
+        const overlap = BALL_R * 2 - dist;
+        a.x -= nx * overlap / 2; a.y -= ny * overlap / 2;
+        b.x += nx * overlap / 2; b.y += ny * overlap / 2;
+
+        if (a.id === 'cue' && G.shotEvents.firstHit === null) G.shotEvents.firstHit = b.color;
+        if (b.id === 'cue' && G.shotEvents.firstHit === null) G.shotEvents.firstHit = a.color;
+
+        const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
+        const velAlongNormal = rvx * nx + rvy * ny;
+        if (velAlongNormal > 0) continue;
+        const impulse = -(1 + RESTITUTION_BALL) * velAlongNormal / 2;
+        a.vx -= impulse * nx; a.vy -= impulse * ny;
+        b.vx += impulse * nx; b.vy += impulse * ny;
       }
     }
   }
 
-  // wall bounce
+  // friction and the stop threshold apply once per full frame, not per sub-step
   for (const b of balls) {
     if (b.potted) continue;
-    if (b.x < INNER.left) { b.x = INNER.left; b.vx = -b.vx * RESTITUTION_WALL; }
-    if (b.x > INNER.right) { b.x = INNER.right; b.vx = -b.vx * RESTITUTION_WALL; }
-    if (b.y < INNER.top) { b.y = INNER.top; b.vy = -b.vy * RESTITUTION_WALL; }
-    if (b.y > INNER.bottom) { b.y = INNER.bottom; b.vy = -b.vy * RESTITUTION_WALL; }
-  }
-
-  // ball-ball collisions
-  const live = balls.filter(b => !b.potted);
-  for (let i = 0; i < live.length; i++) {
-    for (let j = i + 1; j < live.length; j++) {
-      const a = live[i], b = live[j];
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist === 0 || dist >= BALL_R * 2) continue;
-
-      const nx = dx / dist, ny = dy / dist;
-      const overlap = BALL_R * 2 - dist;
-      a.x -= nx * overlap / 2; a.y -= ny * overlap / 2;
-      b.x += nx * overlap / 2; b.y += ny * overlap / 2;
-
-      if (a.id === 'cue' && G.shotEvents.firstHit === null) G.shotEvents.firstHit = b.color;
-      if (b.id === 'cue' && G.shotEvents.firstHit === null) G.shotEvents.firstHit = a.color;
-
-      const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
-      const velAlongNormal = rvx * nx + rvy * ny;
-      if (velAlongNormal > 0) continue;
-      const impulse = -(1 + RESTITUTION_BALL) * velAlongNormal / 2;
-      a.vx -= impulse * nx; a.vy -= impulse * ny;
-      b.vx += impulse * nx; b.vy += impulse * ny;
-    }
+    b.vx *= FRICTION;
+    b.vy *= FRICTION;
+    if (Math.hypot(b.vx, b.vy) < MIN_SPEED) { b.vx = 0; b.vy = 0; }
   }
 }
 

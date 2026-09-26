@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="wood" x2="0" y2="1"><stop stop-color="#684426"/><stop offset="1" stop-color="#241209"/></linearGradient>
+    <linearGradient id="felt" x2="1" y2="1"><stop stop-color="#14734f"/><stop offset="1" stop-color="#073c2a"/></linearGradient>
+    <radialGradient id="ball" cx="32%" cy="24%"><stop stop-color="#fff"/><stop offset=".72" stop-color="#f0eadb"/><stop offset="1" stop-color="#b7ad99"/></radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#wood)"/>
+  <rect x="42" y="58" width="428" height="396" rx="68" fill="url(#felt)" stroke="#d7b25e" stroke-width="18"/>
+  <circle cx="158" cy="270" r="48" fill="#c83c30" stroke="#f1d18a" stroke-width="8"/>
+  <circle cx="354" cy="270" r="48" fill="#e2b541" stroke="#f1d18a" stroke-width="8"/>
+  <circle cx="256" cy="270" r="78" fill="url(#ball)" stroke="#d7b25e" stroke-width="9"/>
+  <circle cx="256" cy="270" r="39" fill="#17120e"/>
+  <text x="256" y="287" text-anchor="middle" font-family="Georgia,serif" font-size="48" font-weight="bold" fill="#fff">8</text>
+</svg>

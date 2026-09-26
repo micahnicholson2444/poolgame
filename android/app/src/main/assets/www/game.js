@@ -396,6 +396,26 @@ const ctx = canvas.getContext('2d');
 canvas.width = CANVAS_W;
 canvas.height = CANVAS_H;
 
+function fitMobileTable() {
+  const landscape = matchMedia('(pointer: coarse) and (orientation: landscape)').matches;
+  if (!touchControls || !landscape) {
+    canvas.style.width = '';
+    return;
+  }
+  const wrap = document.getElementById('table-wrap');
+  const availableWidth = wrap.clientWidth - 104;
+  const availableHeight = wrap.clientHeight - 16;
+  if (availableWidth <= 0 || availableHeight <= 0) return;
+  const tableWidth = Math.min(availableWidth, availableHeight * (CANVAS_W / CANVAS_H));
+  canvas.style.width = `${tableWidth}px`;
+}
+function scheduleMobileTableFit() {
+  requestAnimationFrame(fitMobileTable);
+}
+window.addEventListener('resize', scheduleMobileTableFit);
+window.addEventListener('orientationchange', () => setTimeout(scheduleMobileTableFit, 120));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleMobileTableFit);
+
 function drawTable() {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
@@ -1047,6 +1067,7 @@ function showScreen(name) {
   Object.values(screens).forEach(s => s.classList.add('hidden'));
   screens[name].classList.remove('hidden');
   document.body.classList.toggle('playing', name === 'game');
+  if (name === 'game') scheduleMobileTableFit();
 }
 function goToGameScreen() {
   showScreen('game');

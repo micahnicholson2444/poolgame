@@ -40,12 +40,26 @@ testing online play.
 
 ## Deploying to GitHub Pages
 
-1. Push `index.html`, `style.css` and `game.js` to a repository.
+1. Push the project files, including `manifest.webmanifest`, `service-worker.js` and the app icons, to a repository.
 2. In the repo, go to **Settings → Pages**.
 3. Under "Build and deployment", choose **Deploy from a branch**, pick your
    default branch and the `/ (root)` folder, then save.
 3. GitHub gives you a URL like `https://<username>.github.io/<repo>/` — that's
    your game link. Share it with a friend and use Play/Join to start a table.
+
+## Installing on a phone
+
+The game is an installable web app. Publish it over HTTPS first; opening the
+HTML file directly from storage does not support app installation.
+
+- **iPhone/iPad:** open the HTTPS game link in Safari, tap **Share**, then
+  **Add to Home Screen**.
+- **Android:** open the HTTPS game link in Chrome and choose **Install app**
+  from the browser menu (or use the install prompt if it appears).
+
+It launches in a standalone window and caches the game files for offline
+launch. Online multiplayer still needs an internet connection. iOS may ignore
+the landscape preference, but the game asks players to rotate before play.
 
 ## Notes & possible tweaks
 

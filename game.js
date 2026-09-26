@@ -1179,3 +1179,6 @@ function onOpponentLeft() {
 
 /* boot */
 showMenuPane('root');
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' }).catch(() => {}));
+}

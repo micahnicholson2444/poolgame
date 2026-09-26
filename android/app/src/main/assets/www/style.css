@@ -90,6 +90,7 @@ button {
 }
 .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 0 rgba(0,0,0,0.4); }
 .btn:active { transform: translateY(1px); box-shadow: 0 2px 0 rgba(0,0,0,0.4); }
+.btn:disabled { cursor: default; opacity: .58; transform: none; box-shadow: 0 3px 0 rgba(0,0,0,0.3); }
 
 .btn.secondary {
   background: linear-gradient(180deg, #6b4426, #4a2d18);
@@ -134,6 +135,54 @@ input[type="text"] {
   padding: 14px 10px;
   margin: 14px 0;
 }
+
+.coin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid rgba(230,200,119,.7);
+  border-radius: 999px;
+  background: rgba(20,12,6,.72);
+  color: var(--brass-bright);
+  font: 700 .88rem/1 Arial, sans-serif;
+  white-space: nowrap;
+}
+.coin-pill::before { content: '●'; color: #efc94f; font-size: .8rem; text-shadow: 0 1px 4px #000; }
+#pane-root > .coin-pill, #pane-shop > .coin-pill { margin-bottom: 16px; }
+.wallet-status { min-height: 1.3em; margin: 10px 0 0; color: var(--brass-bright); font-size: .9rem; }
+.cue-shop-list { display: grid; gap: 9px; max-height: min(52vh, 420px); overflow-y: auto; padding: 2px 5px 4px 2px; }
+.cue-shop-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid rgba(201,162,75,.45);
+  border-radius: 10px;
+  background: rgba(12,8,5,.45);
+  text-align: left;
+}
+.cue-shop-card.equipped { border-color: var(--brass-bright); box-shadow: 0 0 12px #e6c87722; }
+.cue-shop-art { position: relative; width: 34px; height: 68px; justify-self: center; border-radius: 8px; background: rgba(0,0,0,.25); }
+.cue-shop-art::before { content: ''; position: absolute; left: 14px; top: 5px; bottom: 5px; width: 7px; border-radius: 5px; background: linear-gradient(180deg,var(--cue-tip),var(--cue-highlight) 14%,var(--cue-shaft) 58%,var(--cue-butt)); box-shadow: 1px 2px 4px #0008; }
+.cue-shop-art::after { content: ''; position: absolute; left: 13px; top: 14%; width: 9px; height: 3px; background: var(--cue-accent); box-shadow: 0 42px 0 var(--cue-accent); }
+.cue-shop-info { min-width: 0; }
+.cue-shop-name { color: var(--brass-bright); font-weight: 700; }
+.cue-shop-tag { margin-left: 5px; color: var(--cream); opacity: .55; font: .68rem Arial,sans-serif; }
+.cue-shop-stats { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.cue-shop-stat { padding: 3px 6px; border-radius: 5px; background: #fff1; color: var(--cream); font: .68rem/1.1 Arial,sans-serif; white-space: nowrap; }
+.cue-shop-action { min-width: 88px; width: auto; padding: 9px 10px; font-size: .82rem; }
+.cue-shop-action:disabled { cursor: default; opacity: .58; transform: none; }
+@media (max-width: 520px) {
+  .cue-shop-card { grid-template-columns: 30px minmax(0,1fr); gap: 8px; padding: 8px; }
+  .cue-shop-art { width: 28px; height: 54px; }
+  .cue-shop-art::before { left: 11px; }
+  .cue-shop-art::after { left: 10px; }
+  .cue-shop-action { grid-column: 2; justify-self: start; min-width: 104px; padding: 7px 9px; }
+}
+.panel:has(#pane-shop:not(.hidden)) { max-height: 94dvh; overflow-y: auto; }
+#menu-screen:has(#pane-shop:not(.hidden)) { width: min(700px, 94vw); }
 
 .status-line {
   min-height: 24px;
@@ -375,13 +424,13 @@ canvas#table {
   #game-screen { position: fixed; inset: 0; display: grid; width: auto; height: auto; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 2px; align-content: stretch; justify-items: center; padding: max(3px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(3px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); }
   #hud { grid-column: 1; grid-row: 1; width: 100%; min-height: 36px; flex-wrap: nowrap; }
   #table-wrap { grid-column: 1; grid-row: 2; align-self: stretch; justify-self: stretch; display: grid; place-items: center; width: 100%; height: 100%; min-width: 0; min-height: 0; }
-  #table { width: min(calc((100dvh - 100px) * 1.833), calc(100vw - 104px)); height: auto; max-width: 100%; max-height: 100%; }
+  canvas#table { width: min(calc((100dvh - 100px) * 1.833), calc(100vw - 104px)); height: auto; max-width: 100%; max-height: 100%; }
   #mobile-shot { position: absolute; z-index: 3; top: 50%; right: max(5px, env(safe-area-inset-right)); transform: translateY(-50%); display: flex; width: 42px; height: min(60vh, 260px); min-height: 120px; flex-direction: column; align-items: center; justify-content: space-between; }
   #cue-power { position: relative; flex: 1; width: 100%; max-height: 210px; min-height: 100px; display: flex; align-items: center; justify-content: center; touch-action: none; }
   .power-track { position: absolute; width: 5px; height: 100%; border-radius: 5px; background: linear-gradient(#c9a24b, #50351d); box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
-  #mobile-cue { position: absolute; left: 50%; top: 4px; transform: translateX(-50%); width: 12px; height: 68px; border-radius: 8px; background: linear-gradient(90deg, #75401c, #d7ad67 36%, #f0d193 50%, #865127); border: 1px solid #513016; box-shadow: 1px 3px 5px #000a; pointer-events: none; }
-  #mobile-cue::before { content: ''; position: absolute; top: -5px; left: 3px; width: 4px; height: 8px; border-radius: 2px 2px 0 0; background: #eee5d3; }
-  #mobile-cue::after { content: ''; position: absolute; bottom: -3px; left: 2px; width: 6px; height: 5px; border-radius: 0 0 4px 4px; background: #593319; }
+  #mobile-cue { position: absolute; left: 50%; top: 4px; transform: translateX(-50%); width: 12px; height: 68px; border-radius: 8px; background: linear-gradient(90deg, var(--cue-butt,#75401c), var(--cue-shaft,#8a5a34) 36%, var(--cue-highlight,#f0d193) 50%, var(--cue-shaft,#865127)); border: 1px solid var(--cue-butt,#513016); box-shadow: 1px 3px 5px #000a; pointer-events: none; }
+  #mobile-cue::before { content: ''; position: absolute; top: -5px; left: 3px; width: 4px; height: 8px; border-radius: 2px 2px 0 0; background: var(--cue-tip,#eee5d3); }
+  #mobile-cue::after { content: ''; position: absolute; bottom: -3px; left: 2px; width: 6px; height: 5px; border-radius: 0 0 4px 4px; background: var(--cue-accent,#593319); }
   #mobile-shot.active #mobile-cue { filter: brightness(1.25); }
   #footer-controls { grid-column: 1; grid-row: 3; min-height: 0; justify-content: center; gap: 8px; }
   #footer-controls .btn.small { padding: 6px 14px; font-size: .82rem; }

@@ -21,13 +21,25 @@
     <div class="panel">
 
       <div id="pane-root" class="menu-pane">
+        <div class="coin-pill" id="menu-coins">100 coins</div>
         <h1 class="title">Reds &amp; Yellows</h1>
         <p class="subtitle">A pub table, wherever you are.</p>
         <div class="menu-stack">
-          <button id="btn-play" class="btn">Play — create a table</button>
-          <button id="btn-join" class="btn">Join — enter a code</button>
+          <button id="btn-play" class="btn">Play · 50 coins</button>
+          <button id="btn-join" class="btn">Join · 50 coins</button>
           <button id="btn-sandbox" class="btn secondary">Sandbox — practice solo</button>
+          <button id="btn-shop" class="btn secondary">Cue shop</button>
         </div>
+        <p id="wallet-status" class="wallet-status" role="status"></p>
+      </div>
+
+      <div id="pane-shop" class="menu-pane hidden">
+        <div class="coin-pill" id="shop-coins">100 coins</div>
+        <h1 class="title">Cue shop</h1>
+        <p class="subtitle">Choose your look and playing style.</p>
+        <div id="cue-shop-list" class="cue-shop-list"></div>
+        <p id="shop-status" class="wallet-status" role="status"></p>
+        <button class="back-link">Back</button>
       </div>
 
       <div id="pane-creating" class="menu-pane hidden">
@@ -94,6 +106,7 @@
       <span class="power-hint">Drag back<br>to shoot</span>
     </div>
     <div id="footer-controls">
+      <span id="game-coins" class="coin-pill">100 coins</span>
       <button id="sound-toggle" class="btn small secondary" type="button" aria-pressed="true">Sound: on</button>
       <button id="leave-btn" class="btn small secondary hidden">Leave table</button>
     </div>
@@ -126,6 +139,6 @@
 
 <div id="rotate-screen" role="status"><div class="rotate-card"><div class="phone-turn-icon">▰</div><strong>Turn your phone sideways</strong><span>This pool table is designed for landscape play.</span></div></div>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="game.js?v=pool-circles-21"></script>
+<script src="game.js?v=cue-coins-v1"></script>
 </body>
 </html>

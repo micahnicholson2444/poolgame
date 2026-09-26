@@ -17,6 +17,86 @@ const MAX_PULL = 130;
 const MAX_SPEED = 15.5;
 const RESTITUTION_WALL = 0.86;
 const RESTITUTION_BALL = 0.985;
+const MATCH_ENTRY_FEE = 50;
+const MATCH_WIN_REWARD = 100;
+const PROFILE_STORAGE_KEY = 'reds-yellows-profile-v1';
+
+const CUES = [
+  { id: 'starter', name: 'Classic Maple', price: 0, power: 1, spin: 1, accuracy: 1, label: 'Starter', tip: '#eee4cf', highlight: '#d8b579', shaft: '#8a5a34', butt: '#3b2013', accent: '#c9a24b' },
+  { id: 'grey', name: 'Grey Cue', price: 150, power: 2, spin: 1, accuracy: 1, label: 'Power cue', tip: '#f4f5f6', highlight: '#cfd5da', shaft: '#858e97', butt: '#343b42', accent: '#b9c1c9' },
+  { id: 'greenheart', name: 'Greenheart', price: 250, power: 1, spin: 3, accuracy: 1, label: 'Spin cue', tip: '#e6f0df', highlight: '#8bc29a', shaft: '#28734a', butt: '#123c2a', accent: '#c2e0a0' },
+  { id: 'precision', name: 'Precision', price: 250, power: 1, spin: 1, accuracy: 3, label: 'Aim cue', tip: '#fff8df', highlight: '#ead59a', shaft: '#d0b76f', butt: '#69572d', accent: '#f0dc9b' },
+  { id: 'tournament', name: 'Tournament', price: 500, power: 2, spin: 2, accuracy: 2, label: 'Balanced cue', tip: '#e9efff', highlight: '#8da9d4', shaft: '#395b91', butt: '#1a2b49', accent: '#b9c9e9' },
+];
+
+function loadPlayerProfile() {
+  try {
+    const saved = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!saved) {
+      const fresh = { coins: 100, ownedCues: ['starter'], equippedCue: 'starter' };
+      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(fresh));
+      return fresh;
+    }
+    const profile = JSON.parse(saved);
+    const owned = Array.isArray(profile.ownedCues) ? profile.ownedCues.filter(id => CUES.some(cue => cue.id === id)) : ['starter'];
+    if (!owned.includes('starter')) owned.push('starter');
+    const equipped = owned.includes(profile.equippedCue) ? profile.equippedCue : 'starter';
+    return { coins: Math.max(0, Math.floor(Number(profile.coins) || 0)), ownedCues: [...new Set(owned)], equippedCue: equipped };
+  } catch (_) {
+    return { coins: 100, ownedCues: ['starter'], equippedCue: 'starter' };
+  }
+}
+const playerProfile = loadPlayerProfile();
+let paidMatchActive = false;
+let paidMatchSettled = false;
+let rematchOfferPending = false;
+let guestRematchPaid = false;
+
+function savePlayerProfile() {
+  try { localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(playerProfile)); } catch (_) {}
+  updateWalletDisplay();
+}
+function currentCue() { return CUES.find(cue => cue.id === playerProfile.equippedCue) || CUES[0]; }
+function cueStat(name) { return currentCue()[name]; }
+function updateWalletDisplay() {
+  const text = `${playerProfile.coins} coins`;
+  for (const id of ['menu-coins', 'shop-coins', 'game-coins']) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+}
+function updateEquippedCueDisplay() {
+  const cue = currentCue();
+  const mobileCue = document.getElementById('mobile-cue');
+  if (!mobileCue) return;
+  for (const [key, value] of Object.entries({ tip: cue.tip, highlight: cue.highlight, shaft: cue.shaft, butt: cue.butt, accent: cue.accent })) {
+    mobileCue.style.setProperty(`--cue-${key}`, value);
+  }
+}
+function chargeMatchEntry() {
+  if (playerProfile.coins < MATCH_ENTRY_FEE) return false;
+  playerProfile.coins -= MATCH_ENTRY_FEE;
+  paidMatchActive = true;
+  paidMatchSettled = false;
+  savePlayerProfile();
+  return true;
+}
+function refundMatchEntry() {
+  if (!paidMatchActive || paidMatchSettled) return;
+  playerProfile.coins += MATCH_ENTRY_FEE;
+  paidMatchActive = false;
+  paidMatchSettled = true;
+  savePlayerProfile();
+}
+function settleMatchCoins() {
+  if (!paidMatchActive || paidMatchSettled || G.mode === 'sandbox') return 0;
+  paidMatchActive = false;
+  paidMatchSettled = true;
+  if (G.winner !== G.localPlayerIndex) return 0;
+  playerProfile.coins += MATCH_WIN_REWARD;
+  savePlayerProfile();
+  return MATCH_WIN_REWARD;
+}
 
 const INNER = {
   left: RAIL + BALL_R,
@@ -555,7 +635,7 @@ const AIM_MAX_BOUNCES = 3;
 function traceGuidePath(ox, oy, dirx, diry) {
   const segments = [];
   let x = ox, y = oy, dx = dirx, dy = diry;
-  let remaining = AIM_GUIDE_LENGTH;
+  let remaining = AIM_GUIDE_LENGTH * (1 + (cueStat('accuracy') - 1) * 0.2);
   let ballHit = null;
 
   for (let bounce = 0; bounce <= AIM_MAX_BOUNCES; bounce++) {
@@ -619,25 +699,37 @@ function drawAim() {
     ctx.stroke();
     ctx.restore();
 
-    const lineLen = 70 + pull * 0.3;
+    const lineLen = (70 + pull * 0.3) * (1 + (cueStat('accuracy') - 1) * 0.2);
 
-    // predicted path of the object ball, straight along the line of centres
+    // Match the first collision's object-ball velocity, including side spin.
+    const spinScale = 1 + (cueStat('spin') - 1) * 0.15;
+    const spinX = selectedSpin.x * spinScale;
+    const spinY = selectedSpin.y * spinScale;
+    const normalSpeed = Math.max(0, hit.dirx * hit.nx + hit.diry * hit.ny);
+    const transfer = (1 + RESTITUTION_BALL) / 2;
+    let objectVx = transfer * normalSpeed * hit.nx + hit.ny * spinX * normalSpeed * 0.06;
+    let objectVy = transfer * normalSpeed * hit.ny - hit.nx * spinX * normalSpeed * 0.06;
+    const objectSpeed = Math.hypot(objectVx, objectVy) || 1;
+    objectVx /= objectSpeed; objectVy /= objectSpeed;
+
     ctx.save();
     ctx.strokeStyle = 'rgba(255,255,255,0.85)';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(hit.ball.x, hit.ball.y);
-    ctx.lineTo(hit.ball.x + hit.nx * lineLen, hit.ball.y + hit.ny * lineLen);
+    ctx.lineTo(hit.ball.x + objectVx * lineLen, hit.ball.y + objectVy * lineLen);
     ctx.stroke();
     ctx.restore();
 
-    // predicted deflection of the cue ball (the component of its travel
-    // that isn't transferred into the object ball on contact)
-    const vn = hit.dirx * hit.nx + hit.diry * hit.ny;
-    const tx = hit.dirx - hit.nx * vn, ty = hit.diry - hit.ny * vn;
-    const tlen = Math.hypot(tx, ty);
-    if (tlen > 0.12) {
-      const ux = tx / tlen, uy = ty / tlen;
+    // Predict the cue ball's post-contact direction using the same impulse
+    // and spin adjustments as the simulation.
+    const cueVx = hit.dirx - transfer * normalSpeed * hit.nx
+      + (-hit.dirx * spinY - hit.diry * spinX) * normalSpeed * 0.3;
+    const cueVy = hit.diry - transfer * normalSpeed * hit.ny
+      + (-hit.diry * spinY + hit.dirx * spinX) * normalSpeed * 0.3;
+    const cueSpeed = Math.hypot(cueVx, cueVy);
+    if (cueSpeed > 0.08) {
+      const ux = cueVx / cueSpeed, uy = cueVy / cueSpeed;
       ctx.save();
       ctx.setLineDash([4, 5]);
       ctx.strokeStyle = 'rgba(205,222,255,0.8)';
@@ -681,11 +773,12 @@ function drawCueStick(cb, dirx, diry, pull) {
   ctx.restore();
 
   // tapered shaft
+  const design = currentCue();
   const grad = ctx.createLinearGradient(tipX, tipY, buttX, buttY);
-  grad.addColorStop(0, '#efe6d2');
-  grad.addColorStop(0.14, '#d8b579');
-  grad.addColorStop(0.55, '#8a5a34');
-  grad.addColorStop(1, '#3b2013');
+  grad.addColorStop(0, design.tip);
+  grad.addColorStop(0.14, design.highlight);
+  grad.addColorStop(0.55, design.shaft);
+  grad.addColorStop(1, design.butt);
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(tipX + perpx * tipW / 2, tipY + perpy * tipW / 2);
@@ -722,7 +815,7 @@ function drawCueStick(cb, dirx, diry, pull) {
   // brass joint ring, purely decorative
   const ringX = tipX + (buttX - tipX) * 0.82, ringY = tipY + (buttY - tipY) * 0.82;
   ctx.save();
-  ctx.strokeStyle = '#c9a24b';
+  ctx.strokeStyle = design.accent;
   ctx.lineWidth = buttW * 0.9;
   ctx.beginPath();
   ctx.moveTo(ringX - dirx * 3, ringY - diry * 3);
@@ -833,9 +926,14 @@ function canvasPos(evt) {
 }
 
 function shootWithPower(dirx, diry, pull) {
-  const speed = (Math.min(pull, MAX_PULL) / MAX_PULL) * MAX_SPEED;
-  if (G.mode === 'guest') { const cb = cueBall(), placement = canPlaceCue(); G.moving = true; conn && conn.send({ type: 'shoot', dx: dirx, dy: diry, speed, spin: selectedSpin, cueX: placement ? cb.x : undefined, cueY: placement ? cb.y : undefined }); }
-  else performLocalShot({ x: dirx, y: diry }, speed, selectedSpin);
+  const powerScale = 1 + (cueStat('power') - 1) * 0.12;
+  const spinScale = 1 + (cueStat('spin') - 1) * 0.15;
+  const speed = (Math.min(pull, MAX_PULL) / MAX_PULL) * MAX_SPEED * powerScale;
+  const shotSpin = { x: selectedSpin.x * spinScale, y: selectedSpin.y * spinScale };
+  if (G.mode === 'guest') { const cb = cueBall(), placement = canPlaceCue(); G.moving = true; conn && conn.send({ type: 'shoot', dx: dirx, dy: diry, speed, spin: shotSpin, cueX: placement ? cb.x : undefined, cueY: placement ? cb.y : undefined }); }
+  else performLocalShot({ x: dirx, y: diry }, speed, shotSpin);
+  selectedSpin = { x: 0, y: 0 };
+  updateSpinDot();
   cuePlacementConfirmed = false; cuePlacementStatus = '';
   mobileAimDir = null; mobilePowerPull = 0; render();
 }
@@ -965,9 +1063,53 @@ function showWinner() {
   const overlay = document.getElementById('winner-overlay');
   const text = document.getElementById('winner-text');
   const reason = document.getElementById('winner-reason');
+  const reward = settleMatchCoins();
   text.textContent = `${pname(G.winner)} win${G.winner === G.localPlayerIndex && G.mode !== 'sandbox' ? '' : 's'}!`;
-  reason.textContent = formatMessage(G.lastEvent);
+  reason.textContent = formatMessage(G.lastEvent) + (reward ? ` You earned ${reward} coins.` : '');
+  updateWinnerRematchButton();
   overlay.classList.remove('hidden');
+}
+function updateWinnerRematchButton() {
+  const button = document.getElementById('play-again-btn');
+  if (!button) return;
+  if (G.mode === 'sandbox') {
+    button.textContent = 'Play again';
+    button.disabled = false;
+  } else if (G.mode === 'host') {
+    button.textContent = rematchOfferPending ? 'Waiting for opponent…' : playerProfile.coins < MATCH_ENTRY_FEE ? 'Need 50 coins' : 'Offer rematch · 50 coins';
+    button.disabled = rematchOfferPending || playerProfile.coins < MATCH_ENTRY_FEE;
+  } else {
+    button.textContent = guestRematchPaid ? 'Waiting for host…' : rematchOfferPending ? playerProfile.coins < MATCH_ENTRY_FEE ? 'Need 50 coins' : 'Accept rematch · 50 coins' : 'Waiting for host';
+    button.disabled = !rematchOfferPending || guestRematchPaid || playerProfile.coins < MATCH_ENTRY_FEE;
+  }
+}
+function handlePlayAgain() {
+  if (G.mode === 'sandbox') {
+    resetGame(); hideWinner(); render(); updateHud();
+  } else if (G.mode === 'host') {
+    if (playerProfile.coins < MATCH_ENTRY_FEE) {
+      document.getElementById('winner-reason').textContent = 'You need 50 coins to enter another match.';
+      return;
+    }
+    if (!conn || !conn.open) {
+      document.getElementById('winner-reason').textContent = 'Your opponent is no longer connected.';
+      return;
+    }
+    rematchOfferPending = true;
+    document.getElementById('winner-reason').textContent = 'Rematch offer sent. The 50-coin entry fee is charged if they accept.';
+    conn.send({ type: 'rematch-offer' });
+    updateWinnerRematchButton();
+  } else if (G.mode === 'guest' && rematchOfferPending) {
+    if (!chargeMatchEntry()) {
+      document.getElementById('winner-reason').textContent = 'You need 50 coins to accept this rematch.';
+      return;
+    }
+    guestRematchPaid = true;
+    if (conn && conn.open) conn.send({ type: 'rematch-accept' });
+    else { refundMatchEntry(); guestRematchPaid = false; }
+    document.getElementById('winner-reason').textContent = 'Waiting for the host to start the rematch…';
+    updateWinnerRematchButton();
+  }
 }
 function hideWinner() {
   document.getElementById('winner-overlay').classList.add('hidden');
@@ -1017,15 +1159,32 @@ function sendInit() {
 }
 
 function hostReceive(data) {
-  if (data.type === 'shoot') {
+  if (data.type === 'entry-denied') {
+    refundMatchEntry();
+    G.mode = 'menu';
+    showScreen('menu'); showMenuPane('root');
+    document.getElementById('wallet-status').textContent = 'The other player could not pay the 50-coin entry fee. Your fee was returned.';
+    teardownNetworking();
+  } else if (data.type === 'shoot') {
     if (G.turn === 1 && !G.moving && !simRunning) {
       if (G.freeBall[1] && Number.isFinite(data.cueX) && Number.isFinite(data.cueY)) placeCueBall(data.cueX, data.cueY);
       performLocalShotFor(1, { x: data.dx, y: data.dy }, data.speed, data.spin);
     }
-  } else if (data.type === 'restart-request') {
+  } else if (data.type === 'rematch-accept' && rematchOfferPending) {
+    rematchOfferPending = false;
+    if (!chargeMatchEntry()) {
+      conn && conn.send({ type: 'rematch-denied' });
+      document.getElementById('winner-reason').textContent = 'You need 50 coins to host another match.';
+      updateWinnerRematchButton();
+      return;
+    }
     resetGame();
-    updateHud(); render(); hideWinner();
+    hideWinner(); render(); updateHud();
     sendInit();
+  } else if (data.type === 'rematch-denied' && rematchOfferPending) {
+    rematchOfferPending = false;
+    document.getElementById('winner-reason').textContent = 'Your opponent does not have 50 coins for a rematch.';
+    updateWinnerRematchButton();
   }
 }
 function performLocalShotFor(idx, dir, speed, spin) {
@@ -1035,7 +1194,21 @@ function performLocalShotFor(idx, dir, speed, spin) {
 
 function guestReceive(data) {
   if (data.type === 'sound') { playSound(data.kind, data.strength);
+  } else if (data.type === 'entry-denied') {
+    refundMatchEntry();
+    G.mode = 'menu';
+    showScreen('menu'); showMenuPane('root');
+    document.getElementById('wallet-status').textContent = 'The host could not start the paid match. Your entry fee was returned.';
   } else if (data.type === 'init') {
+    if (!paidMatchActive && !chargeMatchEntry()) {
+      conn && conn.send({ type: 'entry-denied' });
+      G.mode = 'menu';
+      showScreen('menu'); showMenuPane('root');
+      document.getElementById('wallet-status').textContent = 'You need 50 coins to enter a match.';
+      return;
+    }
+    rematchOfferPending = false;
+    guestRematchPaid = false;
     applyState(data.state);
     updateHud(); render(); hideWinner();
     goToGameScreen();
@@ -1048,6 +1221,19 @@ function guestReceive(data) {
     applyState(data.state); // includes the authoritative G.moving = false
     updateHud(); render();
     if (G.winner !== null) showWinner();
+  } else if (data.type === 'rematch-offer') {
+    rematchOfferPending = true;
+    guestRematchPaid = false;
+    document.getElementById('winner-reason').textContent = playerProfile.coins >= MATCH_ENTRY_FEE
+      ? 'Your opponent offered a rematch. Accept to enter for 50 coins.'
+      : 'You need 50 coins to accept this rematch.';
+    updateWinnerRematchButton();
+  } else if (data.type === 'rematch-denied') {
+    if (guestRematchPaid) refundMatchEntry();
+    guestRematchPaid = false;
+    rematchOfferPending = false;
+    document.getElementById('winner-reason').textContent = 'Your opponent cannot start another paid match right now.';
+    updateWinnerRematchButton();
   }
 }
 
@@ -1078,6 +1264,9 @@ function goToGameScreen() {
 function goToMenu() {
   teardownNetworking();
   simRunning = false;
+  if (paidMatchActive) { paidMatchActive = false; paidMatchSettled = true; }
+  rematchOfferPending = false;
+  guestRematchPaid = false;
   G.mode = 'menu';
   showScreen('menu');
   showMenuPane('root');
@@ -1092,7 +1281,57 @@ function showMenuPane(name) {
   document.getElementById('pane-' + name).classList.remove('hidden');
 }
 
+function renderCueShop() {
+  const list = document.getElementById('cue-shop-list');
+  list.innerHTML = CUES.map(cue => {
+    const owned = playerProfile.ownedCues.includes(cue.id);
+    const equipped = playerProfile.equippedCue === cue.id;
+    const action = equipped ? 'Equipped' : owned ? 'Equip' : `${cue.price} coins`;
+    const disabled = equipped || (!owned && playerProfile.coins < cue.price);
+    return `<article class="cue-shop-card${equipped ? ' equipped' : ''}">
+      <span class="cue-shop-art" aria-hidden="true" style="--cue-tip:${cue.tip};--cue-highlight:${cue.highlight};--cue-shaft:${cue.shaft};--cue-butt:${cue.butt};--cue-accent:${cue.accent}"></span>
+      <div class="cue-shop-info"><div class="cue-shop-name">${cue.name}<span class="cue-shop-tag">${cue.label}</span></div>
+      <div class="cue-shop-stats"><span class="cue-shop-stat">Power ${cue.power}/10</span><span class="cue-shop-stat">Spin ${cue.spin}/10</span><span class="cue-shop-stat">Accuracy ${cue.accuracy}/10</span></div></div>
+      <button type="button" class="btn secondary cue-shop-action" data-cue-id="${cue.id}" ${disabled ? 'disabled' : ''}>${action}</button>
+    </article>`;
+  }).join('');
+  updateWalletDisplay();
+}
+
+document.getElementById('btn-shop').addEventListener('click', () => {
+  document.getElementById('shop-status').textContent = '';
+  renderCueShop();
+  showMenuPane('shop');
+});
+document.getElementById('cue-shop-list').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-cue-id]');
+  if (!button || button.disabled) return;
+  const cue = CUES.find(item => item.id === button.dataset.cueId);
+  if (!cue) return;
+  if (playerProfile.ownedCues.includes(cue.id)) {
+    playerProfile.equippedCue = cue.id;
+    document.getElementById('shop-status').textContent = `${cue.name} equipped.`;
+  } else if (playerProfile.coins >= cue.price) {
+    playerProfile.coins -= cue.price;
+    playerProfile.ownedCues.push(cue.id);
+    playerProfile.equippedCue = cue.id;
+    document.getElementById('shop-status').textContent = `${cue.name} purchased and equipped.`;
+  } else {
+    document.getElementById('shop-status').textContent = `You need ${cue.price} coins to buy that cue.`;
+    return;
+  }
+  savePlayerProfile();
+  renderCueShop();
+  updateEquippedCueDisplay();
+  render();
+});
+
 document.getElementById('btn-play').addEventListener('click', () => {
+  if (playerProfile.coins < MATCH_ENTRY_FEE) {
+    document.getElementById('wallet-status').textContent = 'You need 50 coins to enter a match. Play Sandbox for free.';
+    return;
+  }
+  document.getElementById('wallet-status').textContent = '';
   showMenuPane('creating');
   document.getElementById('create-status').textContent = 'Opening a table…';
   createRoom();
@@ -1111,23 +1350,18 @@ document.querySelectorAll('.back-link').forEach(b => b.addEventListener('click',
 document.getElementById('btn-join-submit').addEventListener('click', () => {
   const code = document.getElementById('join-code-input').value.trim().toUpperCase();
   if (code.length < 3) return;
+  if (playerProfile.coins < MATCH_ENTRY_FEE) {
+    document.getElementById('wallet-status').textContent = 'You need 50 coins to enter a match. Play Sandbox for free.';
+    showMenuPane('root');
+    return;
+  }
+  document.getElementById('wallet-status').textContent = '';
   showMenuPane('joining');
   document.getElementById('join-status').textContent = 'Connecting…';
   joinRoom(code);
 });
 document.getElementById('leave-btn').addEventListener('click', goToMenu);
-document.getElementById('play-again-btn').addEventListener('click', () => {
-  if (G.mode === 'host') {
-    resetGame();
-    hideWinner(); render(); updateHud();
-    sendInit();
-  } else if (G.mode === 'sandbox') {
-    resetGame();
-    hideWinner(); render(); updateHud();
-  } else if (G.mode === 'guest') {
-    conn && conn.send({ type: 'restart-request' });
-  }
-});
+document.getElementById('play-again-btn').addEventListener('click', handlePlayAgain);
 document.getElementById('winner-menu-btn').addEventListener('click', goToMenu);
 
 function createRoom(attempt = 0) {
@@ -1143,6 +1377,12 @@ function createRoom(attempt = 0) {
   peer.on('connection', (c) => {
     conn = c;
     conn.on('open', () => {
+      if (!chargeMatchEntry()) {
+        conn.send({ type: 'entry-denied' });
+        document.getElementById('create-status').textContent = 'You need 50 coins to enter a match.';
+        setTimeout(() => { if (conn === c) conn.close(); }, 180);
+        return;
+      }
       G.mode = 'host';
       G.localPlayerIndex = 0;
       resetGame();
@@ -1190,6 +1430,9 @@ function joinRoom(code) {
 
 function onOpponentLeft() {
   if (screens.game.classList.contains('hidden')) return;
+  if (guestRematchPaid) refundMatchEntry();
+  guestRematchPaid = false;
+  rematchOfferPending = false;
   const msg = document.getElementById('center-message');
   msg.textContent = 'Opponent left the table.';
   document.getElementById('winner-overlay').classList.remove('hidden');
@@ -1199,6 +1442,8 @@ function onOpponentLeft() {
 }
 
 /* boot */
+updateWalletDisplay();
+updateEquippedCueDisplay();
 showMenuPane('root');
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' }).catch(() => {}));

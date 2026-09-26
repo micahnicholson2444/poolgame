@@ -436,12 +436,14 @@ function drawTable() {
   }
 
   // baulk line + spot (visual flavour)
-  ctx.strokeStyle = 'rgba(239,230,210,0.25)';
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = canPlaceCue() ? 'rgba(230,200,119,0.95)' : 'rgba(239,230,210,0.25)';
+  ctx.lineWidth = canPlaceCue() ? 2.4 : 1.5;
+  ctx.setLineDash(canPlaceCue() ? [8, 6] : []);
   ctx.beginPath();
   ctx.moveTo(HEAD_SPOT.x, RAIL + 6);
   ctx.lineTo(HEAD_SPOT.x, RAIL + TABLE_H - 6);
   ctx.stroke();
+  ctx.setLineDash([]);
 }
 
 function drawBalls() {
@@ -796,6 +798,11 @@ function placeCueBall(x, y) {
   const cb = cueBall(); cb.x = x; cb.y = y; cb.potted = false; cb.vx = 0; cb.vy = 0; return true;
 }
 let cuePlacementDragging = false;
+let cuePlacementMoved = false;
+let cuePlacementLastValid = true;
+let cuePlacementConfirmed = false;
+let cuePlacementStatus = '';
+let cuePlacementStart = null;
 function canvasPos(evt) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
@@ -809,20 +816,32 @@ function shootWithPower(dirx, diry, pull) {
   const speed = (Math.min(pull, MAX_PULL) / MAX_PULL) * MAX_SPEED;
   if (G.mode === 'guest') { const cb = cueBall(), placement = canPlaceCue(); G.moving = true; conn && conn.send({ type: 'shoot', dx: dirx, dy: diry, speed, spin: selectedSpin, cueX: placement ? cb.x : undefined, cueY: placement ? cb.y : undefined }); }
   else performLocalShot({ x: dirx, y: diry }, speed, selectedSpin);
+  cuePlacementConfirmed = false; cuePlacementStatus = '';
   mobileAimDir = null; mobilePowerPull = 0; render();
 }
 canvas.addEventListener('pointerdown', (e) => {
-  if (canPlaceCue()) {
-    e.preventDefault(); canvas.setPointerCapture(e.pointerId); cuePlacementDragging = true;
-    const pos = canvasPos(e); placeCueBall(pos.x, pos.y); render(); return;
-  }
   if (!canAim()) return;
+  if (canPlaceCue()) {
+    const pos = canvasPos(e), cb = cueBall(), rect = canvas.getBoundingClientRect();
+    const grabRadius = touchControls ? Math.max(BALL_R * 2.4, 28 * canvas.width / rect.width) : BALL_R * 1.8;
+    if (Math.hypot(pos.x - cb.x, pos.y - cb.y) <= grabRadius) {
+      e.preventDefault(); canvas.setPointerCapture(e.pointerId); cuePlacementDragging = true;
+      cuePlacementMoved = false; cuePlacementLastValid = validCuePlacement(cb.x, cb.y); cuePlacementConfirmed = false;
+      cuePlacementStatus = ''; cuePlacementStart = pos; render(); return;
+    }
+  }
   if (touchControls) { canvas.setPointerCapture(e.pointerId); aiming = true; aimCurrent = canvasPos(e); return; }
   aiming = true; aimCurrent = canvasPos(e); render();
 });
 window.addEventListener('pointermove', (e) => {
   if (cuePlacementDragging) {
-    const pos = canvasPos(e); placeCueBall(pos.x, pos.y); render(); return;
+    const pos = canvasPos(e);
+    cuePlacementMoved = cuePlacementMoved || Math.hypot(pos.x - cuePlacementStart.x, pos.y - cuePlacementStart.y) > 3;
+    if (cuePlacementMoved) {
+      cuePlacementLastValid = placeCueBall(pos.x, pos.y);
+      cuePlacementStatus = cuePlacementLastValid ? 'Release to confirm the cue-ball spot.' : 'That spot is blocked or past the baulk line. Try again.';
+    }
+    render(); return;
   }
   if (mobilePowerDragging) {
     mobilePowerPull = Math.max(0, Math.min(MAX_PULL, (e.clientY - mobilePowerStartY) * 2.6));
@@ -836,7 +855,12 @@ window.addEventListener('pointermove', (e) => {
   render();
 });
 window.addEventListener('pointerup', () => {
-  if (cuePlacementDragging) { cuePlacementDragging = false; render(); return; }
+  if (cuePlacementDragging) {
+    cuePlacementDragging = false;
+    cuePlacementConfirmed = cuePlacementMoved && cuePlacementLastValid;
+    cuePlacementStatus = cuePlacementConfirmed ? 'Cue ball placed — aim and shoot.' : (cuePlacementMoved ? 'Spot not accepted. Drag the white ball to a clear place behind the line.' : '');
+    updateHud(); render(); return;
+  }
   if (mobilePowerDragging) {
     mobilePowerDragging = false; document.getElementById('mobile-shot').classList.remove('active');
     if (canAim() && mobileAimDir && mobilePowerPull >= 5) shootWithPower(mobileAimDir.x, mobileAimDir.y, mobilePowerPull);
@@ -914,7 +938,7 @@ function updateHud() {
   chip1.classList.toggle('active', G.turn === 1 && G.winner === null);
 
   const msg = document.getElementById('center-message');
-  msg.textContent = canPlaceCue() ? 'Free ball — place the cue ball behind the line.' : formatMessage(G.lastEvent);
+  msg.textContent = canPlaceCue() ? (cuePlacementStatus || (cuePlacementConfirmed ? 'Cue ball placed — aim and shoot.' : 'Optional: drag the white ball behind the line, or shoot from its current spot.')) : formatMessage(G.lastEvent);
 }
 
 function showWinner() {

@@ -84,7 +84,7 @@
 
     <div id="mobile-shot" aria-label="Shot power">
       <span class="power-label">POWER</span>
-      <div id="cue-power" role="slider" aria-label="Pull cue back for power" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="power-track"></div><div id="mobile-cue">➤</div></div>
+      <div id="cue-power" role="slider" aria-label="Pull cue back for power" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="power-track"></div><div id="mobile-cue" aria-hidden="true"></div></div>
       <span class="power-hint">Drag back<br>to shoot</span>
     </div>
     <div id="footer-controls">
@@ -117,6 +117,7 @@
 
 </div>
 
+<div id="rotate-screen" role="status"><div class="rotate-card"><div class="phone-turn-icon">▰</div><strong>Turn your phone sideways</strong><span>This pool table is designed for landscape play.</span></div></div>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="game.js"></script>
 </body>

@@ -144,14 +144,62 @@ let peer = null;   // PeerJS Peer
 let audioContext = null;
 let soundEnabled = true;
 let lastImpactSound = 0;
+let musicTimer = null;
+let musicBeat = 0;
+const musicChords = [
+  { notes: [50, 54, 57], bass: 38 }, // D
+  { notes: [47, 50, 54], bass: 35 }, // Bm
+  { notes: [43, 47, 50], bass: 31 }, // G
+  { notes: [45, 49, 52], bass: 33 }, // A
+];
+const musicMelody = [74, 69, 66, 69, 76, 73, 69, 66, 74, 69, 67, 71, 73, 69, 64, 69];
+function getAudioContext() {
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return null;
+  if (!audioContext) audioContext = new AudioCtor();
+  if (audioContext.state === 'suspended') audioContext.resume();
+  return audioContext;
+}
+function playMusicNote(midi, start, duration, volume, type = 'sine') {
+  if (!audioContext || !soundEnabled) return;
+  const osc = audioContext.createOscillator(), gain = audioContext.createGain();
+  const frequency = 440 * Math.pow(2, (midi - 69) / 12);
+  osc.type = type; osc.frequency.setValueAtTime(frequency, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.025);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  osc.connect(gain); gain.connect(audioContext.destination);
+  osc.start(start); osc.stop(start + duration + 0.03);
+}
+function playMusicBeat() {
+  if (!soundEnabled || !audioContext || audioContext.state !== 'running' || G.mode === 'menu') return;
+  const beat = musicBeat % 16, chord = musicChords[Math.floor(beat / 4)];
+  const at = audioContext.currentTime + 0.025;
+  playMusicNote(musicMelody[beat], at, 0.42, 0.012, 'triangle');
+  if (beat % 4 === 0) {
+    playMusicNote(chord.bass, at, 1.8, 0.014, 'sine');
+    chord.notes.forEach((note, i) => playMusicNote(note + 12, at + i * 0.025, 2.25, 0.0035, 'sine'));
+  }
+  musicBeat++;
+}
+function startBackgroundMusic() {
+  if (!soundEnabled || musicTimer || G.mode === 'menu') return;
+  try {
+    if (!getAudioContext()) return;
+    playMusicBeat();
+    musicTimer = window.setInterval(playMusicBeat, 640);
+  } catch (_) { /* Music is optional when Web Audio is unavailable. */ }
+}
+function stopBackgroundMusic() {
+  if (musicTimer) window.clearInterval(musicTimer);
+  musicTimer = null;
+  musicBeat = 0;
+}
 function playSound(kind, strength = 1) {
   if (G.mode === 'host' && conn && conn.open) conn.send({ type: 'sound', kind, strength });
   if (!soundEnabled) return;
   try {
-    const AudioCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtor) return;
-    if (!audioContext) audioContext = new AudioCtor();
-    if (audioContext.state === 'suspended') audioContext.resume();
+    if (!getAudioContext()) return;
     const now = audioContext.currentTime, osc = audioContext.createOscillator(), gain = audioContext.createGain();
     const scale = Math.max(0.2, Math.min(1, strength / 9));
     const cfg = kind === 'pocket' ? [115, 'sine', 0.14] : kind === 'rail' ? [210, 'triangle', 0.05] : kind === 'cue' ? [155, 'sine', 0.07] : [340, 'triangle', 0.045];
@@ -160,6 +208,21 @@ function playSound(kind, strength = 1) {
     gain.gain.setValueAtTime(0.0001, now); gain.gain.exponentialRampToValueAtTime((kind === 'pocket' ? 0.07 : 0.035) * scale, now + 0.004);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + cfg[2]);
     osc.connect(gain); gain.connect(audioContext.destination); osc.start(now); osc.stop(now + cfg[2] + 0.01);
+    // A short filtered noise transient gives impacts a soft felt/wood texture.
+    if (kind !== 'cue') {
+      const length = Math.floor(audioContext.sampleRate * 0.045);
+      const buffer = audioContext.createBuffer(1, length, audioContext.sampleRate);
+      const samples = buffer.getChannelData(0);
+      for (let i = 0; i < length; i++) samples[i] = (Math.random() * 2 - 1) * (1 - i / length);
+      const source = audioContext.createBufferSource(), filter = audioContext.createBiquadFilter(), noiseGain = audioContext.createGain();
+      source.buffer = buffer; filter.type = 'lowpass';
+      filter.frequency.value = kind === 'pocket' ? 650 : kind === 'rail' ? 1500 : 3600;
+      noiseGain.gain.setValueAtTime(0.0001, now);
+      noiseGain.gain.exponentialRampToValueAtTime((kind === 'pocket' ? 0.024 : 0.014) * scale, now + 0.002);
+      noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+      source.connect(filter); filter.connect(noiseGain); noiseGain.connect(audioContext.destination);
+      source.start(now); source.stop(now + 0.05);
+    }
   } catch (_) { /* Sound is optional; gameplay continues if unavailable. */ }
 }
 /* =========================================================
@@ -578,6 +641,8 @@ function ballFill(color) {
 
 let aiming = false;
 let aimCurrent = { x: 0, y: 0 };
+let opponentAim = null;
+let lastAimSentAt = 0;
 const touchControls = matchMedia('(pointer: coarse)').matches;
 let mobileAimDir = null;
 let mobilePowerStartY = 0;
@@ -750,6 +815,50 @@ function drawAim() {
   powerFill.style.width = Math.round((pull / MAX_PULL) * 100) + '%';
 }
 
+function drawOpponentAim() {
+  if (!opponentAim || G.mode === 'sandbox' || G.moving) return;
+  const cb = cueBall();
+  if (!cb || cb.potted) return;
+  const x0 = Number.isFinite(opponentAim.x0) ? opponentAim.x0 : cb.x;
+  const y0 = Number.isFinite(opponentAim.y0) ? opponentAim.y0 : cb.y;
+  const { segments, ballHit } = traceGuidePath(x0, y0, opponentAim.x, opponentAim.y);
+  ctx.save();
+  ctx.setLineDash([5, 7]);
+  ctx.strokeStyle = 'rgba(64, 225, 255, 0.86)';
+  ctx.lineWidth = 2.5;
+  for (const seg of segments) {
+    ctx.beginPath(); ctx.moveTo(seg.x1, seg.y1); ctx.lineTo(seg.x2, seg.y2); ctx.stroke();
+  }
+  if (ballHit) {
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath(); ctx.arc(ballHit.ghostX, ballHit.ghostY, BALL_R + 2, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function publishAimDirection(direction, force = false) {
+  if ((G.mode !== 'host' && G.mode !== 'guest') || !conn || !conn.open) return;
+  const now = performance.now();
+  if (!force && now - lastAimSentAt < 40) return;
+  lastAimSentAt = now;
+  if (!direction) {
+    conn.send({ type: 'aim-update', direction: null });
+    return;
+  }
+  const length = Math.hypot(direction.x, direction.y) || 1;
+  const cb = cueBall();
+  conn.send({ type: 'aim-update', direction: { x: direction.x / length, y: direction.y / length, x0: cb?.x, y0: cb?.y } });
+}
+
+function localAimDirection() {
+  const cb = cueBall();
+  if (!cb) return null;
+  if (touchControls && mobileAimDir) return mobileAimDir;
+  const dx = aimCurrent.x - cb.x, dy = aimCurrent.y - cb.y;
+  const length = Math.hypot(dx, dy);
+  return length > 5 ? { x: -dx / length, y: -dy / length } : null;
+}
+
 /* A tapered wooden cue: cream ferrule + chalked tip at the front, a
    walnut-to-maple gradient shaft, and a brass joint ring near the butt.
    It pulls back further from the ball as power builds. */
@@ -827,6 +936,7 @@ function drawCueStick(cb, dirx, diry, pull) {
 function render() {
   drawTable();
   drawBalls();
+  drawOpponentAim();
   drawAim();
 }
 
@@ -930,6 +1040,8 @@ function shootWithPower(dirx, diry, pull) {
   const spinScale = 1 + (cueStat('spin') - 1) * 0.15;
   const speed = (Math.min(pull, MAX_PULL) / MAX_PULL) * MAX_SPEED * powerScale;
   const shotSpin = { x: selectedSpin.x * spinScale, y: selectedSpin.y * spinScale };
+  publishAimDirection(null, true);
+  opponentAim = null;
   if (G.mode === 'guest') { const cb = cueBall(), placement = canPlaceCue(); G.moving = true; conn && conn.send({ type: 'shoot', dx: dirx, dy: diry, speed, spin: shotSpin, cueX: placement ? cb.x : undefined, cueY: placement ? cb.y : undefined }); }
   else performLocalShot({ x: dirx, y: diry }, speed, shotSpin);
   selectedSpin = { x: 0, y: 0 };
@@ -948,8 +1060,8 @@ canvas.addEventListener('pointerdown', (e) => {
       cuePlacementStatus = ''; cuePlacementStart = pos; render(); return;
     }
   }
-  if (touchControls) { canvas.setPointerCapture(e.pointerId); aiming = true; aimCurrent = canvasPos(e); return; }
-  aiming = true; aimCurrent = canvasPos(e); render();
+  if (touchControls) { canvas.setPointerCapture(e.pointerId); aiming = true; aimCurrent = canvasPos(e); publishAimDirection(localAimDirection(), true); return; }
+  aiming = true; aimCurrent = canvasPos(e); publishAimDirection(localAimDirection(), true); render();
 });
 window.addEventListener('pointermove', (e) => {
   if (cuePlacementDragging) {
@@ -970,6 +1082,7 @@ window.addEventListener('pointermove', (e) => {
   if (!aiming) return;
   aimCurrent = canvasPos(e);
   if (touchControls) { const cb = cueBall(); const dx = cb.x - aimCurrent.x, dy = cb.y - aimCurrent.y, d = Math.hypot(dx, dy) || 1; mobileAimDir = { x: dx / d, y: dy / d }; }
+  publishAimDirection(localAimDirection());
   render();
 });
 window.addEventListener('pointerup', () => {
@@ -986,10 +1099,11 @@ window.addEventListener('pointerup', () => {
   }
   if (!aiming) return;
   aiming = false;
-  if (touchControls) { const cb = cueBall(); const dx = cb.x - aimCurrent.x, dy = cb.y - aimCurrent.y, d = Math.hypot(dx, dy); if (d > 5) mobileAimDir = { x: dx / d, y: dy / d }; render(); return; }
+  if (touchControls) { const cb = cueBall(); const dx = cb.x - aimCurrent.x, dy = cb.y - aimCurrent.y, d = Math.hypot(dx, dy); if (d > 5) mobileAimDir = { x: dx / d, y: dy / d }; publishAimDirection(localAimDirection(), true); render(); return; }
   document.getElementById('power-meter').classList.remove('show');
   const cb = cueBall(); const dx = aimCurrent.x - cb.x, dy = aimCurrent.y - cb.y, dist = Math.hypot(dx, dy);
   if (dist < 8) { render(); return; }
+  publishAimDirection(null, true);
   shootWithPower(-dx / dist, -dy / dist, Math.min(dist, MAX_PULL));
 });
 document.getElementById('cue-power').addEventListener('pointerdown', (e) => {
@@ -1031,8 +1145,17 @@ spinPicker.addEventListener('keydown', (e) => {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') spinOverlay.classList.add('hidden'); });
 updateSpinDot();
 const soundToggle = document.getElementById('sound-toggle');
-soundToggle.addEventListener('click', () => { soundEnabled = !soundEnabled; soundToggle.textContent = 'Sound: ' + (soundEnabled ? 'on' : 'off'); soundToggle.setAttribute('aria-pressed', String(soundEnabled)); if (soundEnabled) playSound('rail', 3); });
-document.addEventListener('pointerdown', () => { if (!audioContext) { const AudioCtor = window.AudioContext || window.webkitAudioContext; if (AudioCtor) audioContext = new AudioCtor(); } }, { once: true, capture: true });
+soundToggle.addEventListener('click', () => {
+  soundEnabled = !soundEnabled;
+  soundToggle.textContent = 'Sound: ' + (soundEnabled ? 'on' : 'off');
+  soundToggle.setAttribute('aria-pressed', String(soundEnabled));
+  if (soundEnabled) { getAudioContext(); startBackgroundMusic(); playSound('rail', 3); }
+  else stopBackgroundMusic();
+});
+document.addEventListener('pointerdown', () => {
+  getAudioContext();
+  if (G.mode !== 'menu') startBackgroundMusic();
+}, { once: true, capture: true });
 /* =========================================================
    HUD
    ========================================================= */
@@ -1159,13 +1282,19 @@ function sendInit() {
 }
 
 function hostReceive(data) {
-  if (data.type === 'entry-denied') {
+  if (data.type === 'aim-update') {
+    const d = data.direction;
+    opponentAim = d && Number.isFinite(d.x) && Number.isFinite(d.y)
+      ? { x: d.x, y: d.y, x0: d.x0, y0: d.y0 } : null;
+    render();
+  } else if (data.type === 'entry-denied') {
     refundMatchEntry();
     G.mode = 'menu';
     showScreen('menu'); showMenuPane('root');
     document.getElementById('wallet-status').textContent = 'The other player could not pay the 50-coin entry fee. Your fee was returned.';
     teardownNetworking();
   } else if (data.type === 'shoot') {
+    opponentAim = null;
     if (G.turn === 1 && !G.moving && !simRunning) {
       if (G.freeBall[1] && Number.isFinite(data.cueX) && Number.isFinite(data.cueY)) placeCueBall(data.cueX, data.cueY);
       performLocalShotFor(1, { x: data.dx, y: data.dy }, data.speed, data.spin);
@@ -1194,6 +1323,11 @@ function performLocalShotFor(idx, dir, speed, spin) {
 
 function guestReceive(data) {
   if (data.type === 'sound') { playSound(data.kind, data.strength);
+  } else if (data.type === 'aim-update') {
+    const d = data.direction;
+    opponentAim = d && Number.isFinite(d.x) && Number.isFinite(d.y)
+      ? { x: d.x, y: d.y, x0: d.x0, y0: d.y0 } : null;
+    render();
   } else if (data.type === 'entry-denied') {
     refundMatchEntry();
     G.mode = 'menu';
@@ -1253,7 +1387,8 @@ function showScreen(name) {
   Object.values(screens).forEach(s => s.classList.add('hidden'));
   screens[name].classList.remove('hidden');
   document.body.classList.toggle('playing', name === 'game');
-  if (name === 'game') scheduleMobileTableFit();
+  if (name === 'game') { scheduleMobileTableFit(); startBackgroundMusic(); }
+  else stopBackgroundMusic();
 }
 function goToGameScreen() {
   showScreen('game');
@@ -1264,9 +1399,11 @@ function goToGameScreen() {
 function goToMenu() {
   teardownNetworking();
   simRunning = false;
+  opponentAim = null;
   if (paidMatchActive) { paidMatchActive = false; paidMatchSettled = true; }
-  rematchOfferPending = false;
-  guestRematchPaid = false;
+    rematchOfferPending = false;
+    guestRematchPaid = false;
+    opponentAim = null;
   G.mode = 'menu';
   showScreen('menu');
   showMenuPane('root');
@@ -1302,6 +1439,62 @@ document.getElementById('btn-shop').addEventListener('click', () => {
   document.getElementById('shop-status').textContent = '';
   renderCueShop();
   showMenuPane('shop');
+});
+const rewardAdOverlay = document.getElementById('reward-ad-overlay');
+const rewardAdMessage = document.getElementById('reward-ad-message');
+const rewardAdClose = document.getElementById('reward-ad-close');
+const rewardAdProgress = document.querySelector('.ad-progress');
+let rewardAdTimer = null;
+let rewardAdRemaining = 15;
+let rewardAdReady = false;
+function closeRewardAd() {
+  if (rewardAdTimer) window.clearInterval(rewardAdTimer);
+  rewardAdTimer = null;
+  rewardAdReady = false;
+  rewardAdOverlay.classList.add('hidden');
+}
+document.getElementById('btn-reward-ad').addEventListener('click', () => {
+  rewardAdRemaining = 15;
+  rewardAdReady = false;
+  rewardAdMessage.textContent = 'Stay on this screen for 15 seconds to earn 50 coins.';
+  rewardAdClose.textContent = 'Close';
+  rewardAdProgress.setAttribute('aria-valuenow', '0');
+  document.getElementById('ad-progress-fill').style.width = '0%';
+  rewardAdOverlay.classList.remove('hidden');
+  let lastTick = Date.now();
+  rewardAdTimer = window.setInterval(() => {
+    const now = Date.now();
+    if (document.hidden) { lastTick = now; return; }
+    rewardAdRemaining = Math.max(0, rewardAdRemaining - (now - lastTick) / 1000);
+    lastTick = now;
+    const elapsed = 15 - rewardAdRemaining;
+    rewardAdProgress.setAttribute('aria-valuenow', String(Math.floor(elapsed)));
+    document.getElementById('ad-progress-fill').style.width = `${elapsed / 15 * 100}%`;
+    if (rewardAdRemaining <= 0) {
+      window.clearInterval(rewardAdTimer);
+      rewardAdTimer = null;
+      rewardAdReady = true;
+      rewardAdMessage.textContent = 'Thanks for watching the demo ad break. Collect your 50 coins.';
+      rewardAdClose.textContent = 'Collect 50 coins';
+      rewardAdProgress.setAttribute('aria-valuenow', '15');
+    } else {
+      rewardAdMessage.textContent = `Stay here for ${Math.ceil(rewardAdRemaining)} more seconds to earn 50 coins.`;
+    }
+  }, 250);
+});
+rewardAdClose.addEventListener('click', () => {
+  if (rewardAdReady) {
+    playerProfile.coins += 50;
+    savePlayerProfile();
+    document.getElementById('wallet-status').textContent = '50 coins added to your wallet.';
+  }
+  closeRewardAd();
+});
+rewardAdOverlay.addEventListener('click', (event) => {
+  if (event.target === rewardAdOverlay) closeRewardAd();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !rewardAdOverlay.classList.contains('hidden')) closeRewardAd();
 });
 document.getElementById('cue-shop-list').addEventListener('click', (event) => {
   const button = event.target.closest('[data-cue-id]');

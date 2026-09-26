@@ -29,6 +29,8 @@
           <button id="btn-join" class="btn">Join · 50 coins</button>
           <button id="btn-sandbox" class="btn secondary">Sandbox — practice solo</button>
           <button id="btn-shop" class="btn secondary">Cue shop</button>
+          <button id="btn-reward-ad" class="btn reward-ad-btn">Watch demo ad · +50 coins</button>
+          <p class="ad-disclosure">Demo rewarded ad break. Earn 50 coins after 15 seconds.</p>
         </div>
         <p id="wallet-status" class="wallet-status" role="status"></p>
       </div>
@@ -123,6 +125,16 @@
       <button id="spin-done" class="btn" type="button">Done</button>
     </div>
   </div>
+  <div id="reward-ad-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="reward-ad-title">
+    <div class="reward-ad-panel">
+      <span class="ad-label">DEMO AD BREAK</span>
+      <div class="ad-visual" aria-hidden="true"><span>YOUR AD<br>COULD BE HERE</span></div>
+      <h2 id="reward-ad-title">Take a short break</h2>
+      <p id="reward-ad-message">Stay on this screen for 15 seconds to earn 50 coins.</p>
+      <div class="ad-progress" role="progressbar" aria-label="Ad progress" aria-valuemin="0" aria-valuemax="15" aria-valuenow="0"><div id="ad-progress-fill"></div></div>
+      <button id="reward-ad-close" class="btn secondary" type="button">Close</button>
+    </div>
+  </div>
   <!-- ================= WINNER OVERLAY ================= -->
   <div id="winner-overlay" class="hidden">
     <div class="panel">
@@ -139,6 +151,6 @@
 
 <div id="rotate-screen" role="status"><div class="rotate-card"><div class="phone-turn-icon">▰</div><strong>Turn your phone sideways</strong><span>This pool table is designed for landscape play.</span></div></div>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="game.js?v=cue-coins-v1"></script>
+<script src="game.js?v=reward-ad-v1"></script>
 </body>
 </html>

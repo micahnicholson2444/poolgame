@@ -407,42 +407,187 @@ function ballFill(color) {
 let aiming = false;
 let aimCurrent = { x: 0, y: 0 };
 
+/* Ray from (ox,oy) in direction (dx,dy) — find the first object ball the
+   cue ball's centre would touch, and the point of contact (ghost-ball
+   position), using the standard ray/circle test against a circle of
+   radius 2*BALL_R (since we're tracking the travelling centre, not edge). */
+function raycastFirstBall(ox, oy, dx, dy) {
+  let best = null;
+  for (const b of G.balls) {
+    if (b.potted || b.id === 'cue') continue;
+    const ocx = ox - b.x, ocy = oy - b.y;
+    const bcoef = 2 * (ocx * dx + ocy * dy);
+    const c = ocx * ocx + ocy * ocy - (2 * BALL_R) * (2 * BALL_R);
+    const disc = bcoef * bcoef - 4 * c;
+    if (disc < 0) continue;
+    const t = (-bcoef - Math.sqrt(disc)) / 2;
+    if (t < 0) continue;
+    if (!best || t < best.t) best = { t, ball: b };
+  }
+  if (!best) return null;
+  const gx = ox + dx * best.t, gy = oy + dy * best.t;
+  let nx = best.ball.x - gx, ny = best.ball.y - gy;
+  const nlen = Math.hypot(nx, ny) || 1;
+  nx /= nlen; ny /= nlen;
+  return { ball: best.ball, ghostX: gx, ghostY: gy, nx, ny };
+}
+
+/* Where the aim ray would cross the inner rail, used to clip the guide
+   line when no ball is in the way. */
+function raycastWall(ox, oy, dx, dy) {
+  let t = Infinity;
+  if (dx > 0) t = Math.min(t, (INNER.right - ox) / dx);
+  if (dx < 0) t = Math.min(t, (INNER.left - ox) / dx);
+  if (dy > 0) t = Math.min(t, (INNER.bottom - oy) / dy);
+  if (dy < 0) t = Math.min(t, (INNER.top - oy) / dy);
+  if (!isFinite(t) || t < 0) t = 300;
+  return { x: ox + dx * t, y: oy + dy * t };
+}
+
 function drawAim() {
   if (!aiming) return;
   const cb = cueBall();
   if (!cb || cb.potted) return;
   const dx = aimCurrent.x - cb.x, dy = aimCurrent.y - cb.y;
-  const pull = Math.min(Math.hypot(dx, dy), MAX_PULL);
   const dist = Math.hypot(dx, dy) || 1;
+  const pull = Math.min(dist, MAX_PULL);
   const dirx = -dx / dist, diry = -dy / dist;
 
-  // trajectory guide
+  const hit = raycastFirstBall(cb.x, cb.y, dirx, diry);
+  const guideEnd = hit ? { x: hit.ghostX, y: hit.ghostY } : raycastWall(cb.x, cb.y, dirx, diry);
+
+  // dashed guide: path the cue ball takes up to contact (or the rail)
   ctx.save();
   ctx.setLineDash([6, 7]);
   ctx.strokeStyle = 'rgba(239,230,210,0.55)';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(cb.x, cb.y);
-  ctx.lineTo(cb.x + dirx * 260, cb.y + diry * 260);
+  ctx.lineTo(guideEnd.x, guideEnd.y);
   ctx.stroke();
   ctx.restore();
 
-  // cue stick
-  const stickBack = 18 + pull;
-  ctx.save();
-  ctx.strokeStyle = '#c9a24b';
-  ctx.lineWidth = 5;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(cb.x - dirx * (BALL_R + 6), cb.y - diry * (BALL_R + 6));
-  ctx.lineTo(cb.x - dirx * stickBack, cb.y - diry * stickBack);
-  ctx.stroke();
-  ctx.restore();
+  if (hit) {
+    // faint ghost-ball outline showing where the cue ball meets the target
+    ctx.save();
+    ctx.setLineDash([3, 4]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(hit.ghostX, hit.ghostY, BALL_R, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    const lineLen = 55 + pull * 0.3;
+
+    // predicted path of the object ball, straight along the line of centres
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(hit.ball.x, hit.ball.y);
+    ctx.lineTo(hit.ball.x + hit.nx * lineLen, hit.ball.y + hit.ny * lineLen);
+    ctx.stroke();
+    ctx.restore();
+
+    // predicted deflection of the cue ball (the component of its travel
+    // that isn't transferred into the object ball on contact)
+    const vn = dirx * hit.nx + diry * hit.ny;
+    const tx = dirx - hit.nx * vn, ty = diry - hit.ny * vn;
+    const tlen = Math.hypot(tx, ty);
+    if (tlen > 0.12) {
+      const ux = tx / tlen, uy = ty / tlen;
+      ctx.save();
+      ctx.setLineDash([4, 5]);
+      ctx.strokeStyle = 'rgba(205,222,255,0.8)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(hit.ghostX, hit.ghostY);
+      ctx.lineTo(hit.ghostX + ux * lineLen * 0.75, hit.ghostY + uy * lineLen * 0.75);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  drawCueStick(cb, dirx, diry, pull);
 
   const powerMeter = document.getElementById('power-meter');
   const powerFill = document.getElementById('power-fill');
   powerMeter.classList.add('show');
   powerFill.style.width = Math.round((pull / MAX_PULL) * 100) + '%';
+}
+
+/* A tapered wooden cue: cream ferrule + chalked tip at the front, a
+   walnut-to-maple gradient shaft, and a brass joint ring near the butt.
+   It pulls back further from the ball as power builds. */
+function drawCueStick(cb, dirx, diry, pull) {
+  const perpx = -diry, perpy = dirx;
+  const tipGap = BALL_R + 5;
+  const shaftLen = 210 + pull * 1.1;
+  const tipX = cb.x - dirx * tipGap, tipY = cb.y - diry * tipGap;
+  const buttX = cb.x - dirx * (tipGap + shaftLen), buttY = cb.y - diry * (tipGap + shaftLen);
+  const tipW = 3, buttW = 9.5;
+
+  // soft drop shadow on the felt
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = buttW + 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(tipX + 2, tipY + 3);
+  ctx.lineTo(buttX + 2, buttY + 3);
+  ctx.stroke();
+  ctx.restore();
+
+  // tapered shaft
+  const grad = ctx.createLinearGradient(tipX, tipY, buttX, buttY);
+  grad.addColorStop(0, '#efe6d2');
+  grad.addColorStop(0.14, '#d8b579');
+  grad.addColorStop(0.55, '#8a5a34');
+  grad.addColorStop(1, '#3b2013');
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(tipX + perpx * tipW / 2, tipY + perpy * tipW / 2);
+  ctx.lineTo(buttX + perpx * buttW / 2, buttY + perpy * buttW / 2);
+  ctx.lineTo(buttX - perpx * buttW / 2, buttY - perpy * buttW / 2);
+  ctx.lineTo(tipX - perpx * tipW / 2, tipY - perpy * tipW / 2);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+
+  // cream ferrule just behind the tip
+  const ferruleX = cb.x - dirx * (tipGap + 9), ferruleY = cb.y - diry * (tipGap + 9);
+  ctx.save();
+  ctx.strokeStyle = '#f4efe2';
+  ctx.lineWidth = tipW + 1.5;
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(ferruleX, ferruleY);
+  ctx.stroke();
+  ctx.restore();
+
+  // chalked leather tip
+  ctx.save();
+  ctx.fillStyle = '#6f89a8';
+  ctx.beginPath();
+  ctx.arc(tipX, tipY, tipW / 2 + 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // brass joint ring, purely decorative
+  const ringX = tipX + (buttX - tipX) * 0.82, ringY = tipY + (buttY - tipY) * 0.82;
+  ctx.save();
+  ctx.strokeStyle = '#c9a24b';
+  ctx.lineWidth = buttW * 0.9;
+  ctx.beginPath();
+  ctx.moveTo(ringX - dirx * 3, ringY - diry * 3);
+  ctx.lineTo(ringX + dirx * 3, ringY + diry * 3);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function render() {

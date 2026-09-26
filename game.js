@@ -9,7 +9,8 @@ const TABLE_H = 460;
 const CANVAS_W = TABLE_W + RAIL * 2;
 const CANVAS_H = TABLE_H + RAIL * 2;
 const BALL_R = 11;
-const POCKET_R = 21;
+const POCKET_R = 23;
+const POCKET_CAPTURE_R = 24;
 const FRICTION = 0.9865;
 const MIN_SPEED = 0.045;
 const MAX_PULL = 130;
@@ -134,7 +135,7 @@ function stepPhysics() {
     for (const b of balls) {
       if (b.potted) continue;
       for (const p of POCKETS) {
-        if (Math.hypot(b.x - p.x, b.y - p.y) < POCKET_R) {
+        if (Math.hypot(b.x - p.x, b.y - p.y) < POCKET_CAPTURE_R) {
           b.potted = true;
           b.vx = 0; b.vy = 0;
           b.x = -1000; b.y = -1000;
@@ -384,6 +385,12 @@ function drawTable() {
     ctx.strokeStyle = '#c9a24b';
     ctx.lineWidth = 2;
     ctx.stroke();
+  }
+
+  // Highlight the legal cue-ball placement area during a free ball.
+  if (typeof canPlaceCue === 'function' && canPlaceCue()) {
+    ctx.fillStyle = 'rgba(230,200,119,0.08)';
+    ctx.fillRect(RAIL, RAIL, HEAD_SPOT.x - RAIL, TABLE_H);
   }
 
   // baulk line + spot (visual flavour)
@@ -739,6 +746,19 @@ function performLocalShot(dir, speed, spin = selectedSpin) {
   startSimLoop();
 }
 
+function canPlaceCue() {
+  return canAim() && G.freeBall[G.localPlayerIndex];
+}
+function validCuePlacement(x, y) {
+  if (x < INNER.left || x > HEAD_SPOT.x || y < INNER.top || y > INNER.bottom) return false;
+  if (POCKETS.some(p => Math.hypot(x - p.x, y - p.y) < POCKET_R + BALL_R)) return false;
+  return !G.balls.some(b => b.id !== 'cue' && !b.potted && Math.hypot(x - b.x, y - b.y) < BALL_R * 2 + 1);
+}
+function placeCueBall(x, y) {
+  if (!validCuePlacement(x, y)) return false;
+  const cb = cueBall(); cb.x = x; cb.y = y; cb.potted = false; cb.vx = 0; cb.vy = 0; return true;
+}
+let cuePlacementDragging = false;
 function canvasPos(evt) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
@@ -750,16 +770,23 @@ function canvasPos(evt) {
 
 function shootWithPower(dirx, diry, pull) {
   const speed = (Math.min(pull, MAX_PULL) / MAX_PULL) * MAX_SPEED;
-  if (G.mode === 'guest') { G.moving = true; conn && conn.send({ type: 'shoot', dx: dirx, dy: diry, speed, spin: selectedSpin }); }
+  if (G.mode === 'guest') { const cb = cueBall(), placement = canPlaceCue(); G.moving = true; conn && conn.send({ type: 'shoot', dx: dirx, dy: diry, speed, spin: selectedSpin, cueX: placement ? cb.x : undefined, cueY: placement ? cb.y : undefined }); }
   else performLocalShot({ x: dirx, y: diry }, speed, selectedSpin);
   mobileAimDir = null; mobilePowerPull = 0; render();
 }
 canvas.addEventListener('pointerdown', (e) => {
+  if (canPlaceCue()) {
+    e.preventDefault(); canvas.setPointerCapture(e.pointerId); cuePlacementDragging = true;
+    const pos = canvasPos(e); placeCueBall(pos.x, pos.y); render(); return;
+  }
   if (!canAim()) return;
   if (touchControls) { canvas.setPointerCapture(e.pointerId); aiming = true; aimCurrent = canvasPos(e); return; }
   aiming = true; aimCurrent = canvasPos(e); render();
 });
 window.addEventListener('pointermove', (e) => {
+  if (cuePlacementDragging) {
+    const pos = canvasPos(e); placeCueBall(pos.x, pos.y); render(); return;
+  }
   if (mobilePowerDragging) {
     mobilePowerPull = Math.max(0, Math.min(MAX_PULL, (e.clientY - mobilePowerStartY) * 2.6));
     document.getElementById('mobile-cue').style.top = `${4 + mobilePowerPull / MAX_PULL * 62}%`;
@@ -772,6 +799,7 @@ window.addEventListener('pointermove', (e) => {
   render();
 });
 window.addEventListener('pointerup', () => {
+  if (cuePlacementDragging) { cuePlacementDragging = false; render(); return; }
   if (mobilePowerDragging) {
     mobilePowerDragging = false; document.getElementById('mobile-shot').classList.remove('active');
     if (canAim() && mobileAimDir && mobilePowerPull >= 5) shootWithPower(mobileAimDir.x, mobileAimDir.y, mobilePowerPull);
@@ -846,7 +874,7 @@ function updateHud() {
   chip1.classList.toggle('active', G.turn === 1 && G.winner === null);
 
   const msg = document.getElementById('center-message');
-  msg.textContent = formatMessage(G.lastEvent);
+  msg.textContent = canPlaceCue() ? 'Free ball — place the cue ball behind the line.' : formatMessage(G.lastEvent);
 }
 
 function showWinner() {
@@ -907,6 +935,7 @@ function sendInit() {
 function hostReceive(data) {
   if (data.type === 'shoot') {
     if (G.turn === 1 && !G.moving && !simRunning) {
+      if (G.freeBall[1] && Number.isFinite(data.cueX) && Number.isFinite(data.cueY)) placeCueBall(data.cueX, data.cueY);
       performLocalShotFor(1, { x: data.dx, y: data.dy }, data.speed, data.spin);
     }
   } else if (data.type === 'restart-request') {

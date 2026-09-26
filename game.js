@@ -432,16 +432,57 @@ function raycastFirstBall(ox, oy, dx, dy) {
   return { ball: best.ball, ghostX: gx, ghostY: gy, nx, ny };
 }
 
-/* Where the aim ray would cross the inner rail, used to clip the guide
-   line when no ball is in the way. */
+/* Where the aim ray would cross the inner rail, and which side it hit
+   (needed so we know which velocity component to flip for the bounce). */
 function raycastWall(ox, oy, dx, dy) {
-  let t = Infinity;
-  if (dx > 0) t = Math.min(t, (INNER.right - ox) / dx);
-  if (dx < 0) t = Math.min(t, (INNER.left - ox) / dx);
-  if (dy > 0) t = Math.min(t, (INNER.bottom - oy) / dy);
-  if (dy < 0) t = Math.min(t, (INNER.top - oy) / dy);
-  if (!isFinite(t) || t < 0) t = 300;
-  return { x: ox + dx * t, y: oy + dy * t };
+  let best = null;
+  if (dx > 0) best = pickWall(best, (INNER.right - ox) / dx, 'v');
+  if (dx < 0) best = pickWall(best, (INNER.left - ox) / dx, 'v');
+  if (dy > 0) best = pickWall(best, (INNER.bottom - oy) / dy, 'h');
+  if (dy < 0) best = pickWall(best, (INNER.top - oy) / dy, 'h');
+  if (!best) return null;
+  return { t: best.t, side: best.side, x: ox + dx * best.t, y: oy + dy * best.t };
+}
+function pickWall(best, t, side) {
+  if (!isFinite(t) || t < 0) return best;
+  if (!best || t < best.t) return { t, side };
+  return best;
+}
+
+const AIM_GUIDE_LENGTH = 420;
+const AIM_MAX_BOUNCES = 3;
+
+/* Traces the cue ball's guide line out to a fixed total length, bending
+   it off any cushion it meets along the way, and stopping early — with
+   the ball it would strike — if one is in the path. */
+function traceGuidePath(ox, oy, dirx, diry) {
+  const segments = [];
+  let x = ox, y = oy, dx = dirx, dy = diry;
+  let remaining = AIM_GUIDE_LENGTH;
+  let ballHit = null;
+
+  for (let bounce = 0; bounce <= AIM_MAX_BOUNCES; bounce++) {
+    const ball = raycastFirstBall(x, y, dx, dy);
+    const ballT = ball ? Math.hypot(ball.ghostX - x, ball.ghostY - y) : Infinity;
+    const wall = raycastWall(x, y, dx, dy);
+    const wallT = wall ? wall.t : Infinity;
+
+    if (ballT <= remaining && ballT <= wallT) {
+      segments.push({ x1: x, y1: y, x2: ball.ghostX, y2: ball.ghostY });
+      ballHit = { ...ball, dirx: dx, diry: dy };
+      break;
+    }
+    if (wallT <= remaining) {
+      segments.push({ x1: x, y1: y, x2: wall.x, y2: wall.y });
+      remaining -= wallT;
+      x = wall.x; y = wall.y;
+      if (wall.side === 'v') dx = -dx; else dy = -dy;
+      continue;
+    }
+    segments.push({ x1: x, y1: y, x2: x + dx * remaining, y2: y + dy * remaining });
+    break;
+  }
+  return { segments, ballHit };
 }
 
 function drawAim() {
@@ -453,18 +494,20 @@ function drawAim() {
   const pull = Math.min(dist, MAX_PULL);
   const dirx = -dx / dist, diry = -dy / dist;
 
-  const hit = raycastFirstBall(cb.x, cb.y, dirx, diry);
-  const guideEnd = hit ? { x: hit.ghostX, y: hit.ghostY } : raycastWall(cb.x, cb.y, dirx, diry);
+  const { segments, ballHit: hit } = traceGuidePath(cb.x, cb.y, dirx, diry);
 
-  // dashed guide: path the cue ball takes up to contact (or the rail)
+  // dashed guide: cue ball's path, bending off any cushions it meets,
+  // stopping at the first ball it would strike
   ctx.save();
   ctx.setLineDash([6, 7]);
-  ctx.strokeStyle = 'rgba(239,230,210,0.55)';
+  ctx.strokeStyle = 'rgba(239,230,210,0.6)';
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(cb.x, cb.y);
-  ctx.lineTo(guideEnd.x, guideEnd.y);
-  ctx.stroke();
+  for (const seg of segments) {
+    ctx.beginPath();
+    ctx.moveTo(seg.x1, seg.y1);
+    ctx.lineTo(seg.x2, seg.y2);
+    ctx.stroke();
+  }
   ctx.restore();
 
   if (hit) {
@@ -478,7 +521,7 @@ function drawAim() {
     ctx.stroke();
     ctx.restore();
 
-    const lineLen = 55 + pull * 0.3;
+    const lineLen = 70 + pull * 0.3;
 
     // predicted path of the object ball, straight along the line of centres
     ctx.save();
@@ -492,8 +535,8 @@ function drawAim() {
 
     // predicted deflection of the cue ball (the component of its travel
     // that isn't transferred into the object ball on contact)
-    const vn = dirx * hit.nx + diry * hit.ny;
-    const tx = dirx - hit.nx * vn, ty = diry - hit.ny * vn;
+    const vn = hit.dirx * hit.nx + hit.diry * hit.ny;
+    const tx = hit.dirx - hit.nx * vn, ty = hit.diry - hit.ny * vn;
     const tlen = Math.hypot(tx, ty);
     if (tlen > 0.12) {
       const ux = tx / tlen, uy = ty / tlen;

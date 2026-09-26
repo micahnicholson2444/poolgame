@@ -16,7 +16,9 @@
 
 html, body {
   margin: 0;
+  width: 100%;
   height: 100%;
+  height: 100dvh;
   background: radial-gradient(ellipse at 50% 0%, #3a2413 0%, var(--ink) 70%);
   color: var(--cream);
   font-family: 'Iowan Old Style', 'Sanchez', Georgia, serif;
@@ -342,13 +344,32 @@ canvas#table {
 /* Mobile play is landscape only. Keep the table large and the power cue visible. */
 #rotate-screen { display: none; }
 @media (pointer: coarse) and (orientation: portrait) {
-  #rotate-screen { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: radial-gradient(ellipse at center, #244331, #090d0a 75%); }
-  .rotate-card { display: flex; flex-direction: column; align-items: center; gap: 14px; width: min(340px, 90vw); padding: 28px 22px; border: 2px solid var(--brass); border-radius: 16px; background: linear-gradient(180deg, var(--walnut-light), var(--walnut-dark)); text-align: center; box-shadow: 0 16px 50px #000b; }
-  .rotate-card strong { color: var(--brass-bright); font-size: 1.35rem; }
-  .rotate-card span { opacity: .82; }
-  .phone-turn-icon { display: grid; place-items: center; width: 64px; height: 40px; border: 4px solid var(--brass-bright); border-radius: 8px; color: transparent; position: relative; animation: turn-phone 1.6s ease-in-out infinite alternate; }
-  .phone-turn-icon::after { content: '↻'; position: absolute; color: var(--brass-bright); font: 32px/1 Arial,sans-serif; right: -25px; top: -14px; }
-  @keyframes turn-phone { to { transform: rotate(90deg); } }
+  body.playing #rotate-screen {
+    position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center;
+    padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+    background: radial-gradient(ellipse at 50% 38%, #284d3b 0%, #12251c 42%, #090d0a 100%);
+    animation: rotate-prompt-in .18s ease-out both;
+  }
+  .rotate-card {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    width: min(360px, 100%); padding: 30px 26px 28px;
+    border: 1px solid rgba(230,200,119,.72); border-radius: 22px;
+    background: linear-gradient(155deg, rgba(76,49,29,.98), rgba(28,17,10,.98));
+    text-align: center; box-shadow: 0 24px 70px #000b, inset 0 1px #fff1;
+  }
+  .rotate-card strong { color: var(--brass-bright); font-size: clamp(1.25rem, 5vw, 1.55rem); letter-spacing: .01em; }
+  .rotate-card span { max-width: 26ch; color: var(--cream); opacity: .78; line-height: 1.45; }
+  .phone-turn-icon {
+    position: relative; width: 88px; height: 60px; display: grid; place-items: center;
+    margin: 4px 0 2px; border: 2px solid rgba(230,200,119,.28); border-radius: 16px;
+    background: rgba(0,0,0,.18);
+  }
+  .phone-turn-icon::before {
+    content: ''; width: 50px; height: 31px; border: 3px solid var(--brass-bright); border-radius: 7px;
+    background: linear-gradient(135deg, #126044, #082f21); box-shadow: 0 0 22px #e6c87728;
+  }
+  .phone-turn-icon::after { content: '↻'; position: absolute; right: -17px; top: -12px; color: var(--brass-bright); font: 24px/1 Arial,sans-serif; }
+  @keyframes rotate-prompt-in { from { opacity: 0; } to { opacity: 1; } }
 }
 @media (pointer: coarse) and (orientation: landscape) {
   #game-screen { display: grid; grid-template-columns: minmax(0, 1fr) 54px; grid-template-rows: auto minmax(0, 1fr) auto; gap: 4px 8px; align-content: stretch; justify-items: center; padding: max(4px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }

@@ -1046,6 +1046,7 @@ const screens = {
 function showScreen(name) {
   Object.values(screens).forEach(s => s.classList.add('hidden'));
   screens[name].classList.remove('hidden');
+  document.body.classList.toggle('playing', name === 'game');
 }
 function goToGameScreen() {
   showScreen('game');

@@ -52,8 +52,11 @@ const G = {
   winner: null,
   lastEvent: null,
   shotEvents: null,
+  activeSpin: { x: 0, y: 0 },
+  shotDirection: { x: 1, y: 0 },
 };
 
+let selectedSpin = { x: 0, y: 0 };
 let conn = null;   // PeerJS DataConnection
 let peer = null;   // PeerJS Peer
 
@@ -144,10 +147,10 @@ function stepPhysics() {
     // wall bounce
     for (const b of balls) {
       if (b.potted) continue;
-      if (b.x < INNER.left) { b.x = INNER.left; b.vx = -b.vx * RESTITUTION_WALL; }
-      if (b.x > INNER.right) { b.x = INNER.right; b.vx = -b.vx * RESTITUTION_WALL; }
-      if (b.y < INNER.top) { b.y = INNER.top; b.vy = -b.vy * RESTITUTION_WALL; }
-      if (b.y > INNER.bottom) { b.y = INNER.bottom; b.vy = -b.vy * RESTITUTION_WALL; }
+      if (b.x < INNER.left) { b.x = INNER.left; b.vx = -b.vx * RESTITUTION_WALL; if (b.id === 'cue') b.vy += Math.abs(b.vx) * G.activeSpin.x * 0.1; }
+      if (b.x > INNER.right) { b.x = INNER.right; b.vx = -b.vx * RESTITUTION_WALL; if (b.id === 'cue') b.vy -= Math.abs(b.vx) * G.activeSpin.x * 0.1; }
+      if (b.y < INNER.top) { b.y = INNER.top; b.vy = -b.vy * RESTITUTION_WALL; if (b.id === 'cue') b.vx -= Math.abs(b.vy) * G.activeSpin.x * 0.1; }
+      if (b.y > INNER.bottom) { b.y = INNER.bottom; b.vy = -b.vy * RESTITUTION_WALL; if (b.id === 'cue') b.vx += Math.abs(b.vy) * G.activeSpin.x * 0.1; }
     }
 
     // ball-ball collisions
@@ -173,6 +176,15 @@ function stepPhysics() {
         const impulse = -(1 + RESTITUTION_BALL) * velAlongNormal / 2;
         a.vx -= impulse * nx; a.vy -= impulse * ny;
         b.vx += impulse * nx; b.vy += impulse * ny;
+        const cue = a.id === 'cue' ? a : (b.id === 'cue' ? b : null);
+        const object = cue === a ? b : a;
+        if (cue) {
+          const spin = G.activeSpin, impact = Math.abs(velAlongNormal);
+          cue.vx += (-G.shotDirection.x * spin.y - G.shotDirection.y * spin.x) * impact * 0.3;
+          cue.vy += (-G.shotDirection.y * spin.y + G.shotDirection.x * spin.x) * impact * 0.3;
+          object.vx += ny * spin.x * impact * 0.06;
+          object.vy -= nx * spin.x * impact * 0.06;
+        }
       }
     }
   }
@@ -715,7 +727,9 @@ function canAim() {
   return G.turn === G.localPlayerIndex;
 }
 
-function performLocalShot(dir, speed) {
+function performLocalShot(dir, speed, spin = selectedSpin) {
+  G.activeSpin = { x: spin.x || 0, y: spin.y || 0 };
+  G.shotDirection = { x: dir.x, y: dir.y };
   const cb = cueBall();
   cb.vx = dir.x * speed;
   cb.vy = dir.y * speed;
@@ -736,8 +750,8 @@ function canvasPos(evt) {
 
 function shootWithPower(dirx, diry, pull) {
   const speed = (Math.min(pull, MAX_PULL) / MAX_PULL) * MAX_SPEED;
-  if (G.mode === 'guest') { G.moving = true; conn && conn.send({ type: 'shoot', dx: dirx, dy: diry, speed }); }
-  else performLocalShot({ x: dirx, y: diry }, speed);
+  if (G.mode === 'guest') { G.moving = true; conn && conn.send({ type: 'shoot', dx: dirx, dy: diry, speed, spin: selectedSpin }); }
+  else performLocalShot({ x: dirx, y: diry }, speed, selectedSpin);
   mobileAimDir = null; mobilePowerPull = 0; render();
 }
 canvas.addEventListener('pointerdown', (e) => {
@@ -776,6 +790,39 @@ document.getElementById('cue-power').addEventListener('pointerdown', (e) => {
   e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); mobilePowerDragging = true; mobilePowerStartY = e.clientY;
   document.getElementById('mobile-shot').classList.add('active');
 });
+const spinOverlay = document.getElementById('spin-overlay');
+const spinPicker = document.getElementById('spin-ball-picker');
+const spinDot = document.getElementById('spin-dot');
+let spinDragging = false;
+function updateSpinDot() {
+  const left = `${(0.5 + selectedSpin.x * 0.42) * 100}%`, top = `${(0.5 + selectedSpin.y * 0.42) * 100}%`;
+  spinDot.style.left = left; spinDot.style.top = top;
+  const miniDot = document.querySelector('.spin-ball-icon i'); miniDot.style.left = left; miniDot.style.top = top;
+  spinPicker.setAttribute('aria-valuenow', `${Math.round(selectedSpin.x * 100)},${Math.round(selectedSpin.y * 100)}`);
+}
+function setSpinFromPointer(e) {
+  const rect = spinPicker.getBoundingClientRect();
+  let x = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2 - 12);
+  let y = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2 - 12);
+  const length = Math.hypot(x, y); if (length > 0.88) { x *= 0.88 / length; y *= 0.88 / length; }
+  selectedSpin = { x, y }; updateSpinDot();
+}
+document.getElementById('spin-open').addEventListener('click', () => { updateSpinDot(); spinOverlay.classList.remove('hidden'); });
+document.getElementById('spin-done').addEventListener('click', () => spinOverlay.classList.add('hidden'));
+spinOverlay.addEventListener('click', (e) => { if (e.target === spinOverlay) spinOverlay.classList.add('hidden'); });
+spinPicker.addEventListener('pointerdown', (e) => { spinDragging = true; spinPicker.setPointerCapture(e.pointerId); setSpinFromPointer(e); });
+spinPicker.addEventListener('pointermove', (e) => { if (spinDragging) setSpinFromPointer(e); });
+spinPicker.addEventListener('pointerup', () => { spinDragging = false; });
+spinPicker.addEventListener('pointercancel', () => { spinDragging = false; });
+spinPicker.addEventListener('keydown', (e) => {
+  const step = e.shiftKey ? 0.2 : 0.06;
+  if (e.key === 'ArrowLeft') selectedSpin.x -= step; else if (e.key === 'ArrowRight') selectedSpin.x += step;
+  else if (e.key === 'ArrowUp') selectedSpin.y -= step; else if (e.key === 'ArrowDown') selectedSpin.y += step; else return;
+  e.preventDefault(); const length = Math.hypot(selectedSpin.x, selectedSpin.y);
+  if (length > 0.88) { selectedSpin.x *= 0.88 / length; selectedSpin.y *= 0.88 / length; } updateSpinDot();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') spinOverlay.classList.add('hidden'); });
+updateSpinDot();
 /* =========================================================
    HUD
    ========================================================= */
@@ -860,7 +907,7 @@ function sendInit() {
 function hostReceive(data) {
   if (data.type === 'shoot') {
     if (G.turn === 1 && !G.moving && !simRunning) {
-      performLocalShotFor(1, { x: data.dx, y: data.dy }, data.speed);
+      performLocalShotFor(1, { x: data.dx, y: data.dy }, data.speed, data.spin);
     }
   } else if (data.type === 'restart-request') {
     resetGame();
@@ -868,9 +915,9 @@ function hostReceive(data) {
     sendInit();
   }
 }
-function performLocalShotFor(idx, dir, speed) {
+function performLocalShotFor(idx, dir, speed, spin) {
   // identical to performLocalShot, exposed for clarity when triggered remotely
-  performLocalShot(dir, speed);
+  performLocalShot(dir, speed, spin || { x: 0, y: 0 });
 }
 
 function guestReceive(data) {

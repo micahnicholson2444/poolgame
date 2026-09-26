@@ -319,3 +319,23 @@ canvas#table {
 }
 
 #mobile-shot { display: none; }
+/* Cue-ball spin selector */
+#hud { position: relative; }
+#spin-open { position: absolute; z-index: 2; top: 0; right: 0; width: 46px; height: 46px; display: grid; place-items: center; border: 2px solid var(--brass); border-radius: 50%; background: rgba(10,5,2,.88); box-shadow: 0 3px 12px #0008; }
+.spin-ball-icon { position: relative; width: 32px; height: 32px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, #fff 0 12%, #f4efe2 40%, #c8c0ae 100%); box-shadow: inset -2px -3px 5px #847d70; }
+.spin-ball-icon i { position: absolute; width: 7px; height: 7px; left: 50%; top: 50%; transform: translate(-50%,-50%); border-radius: 50%; background: #c0392b; box-shadow: 0 0 3px #6e0e08; }
+#spin-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 18px; background: rgba(8,4,2,.82); }
+#spin-overlay.hidden { display: none; }
+.spin-panel { display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(390px, 92vw); padding: 25px; border: 2px solid var(--brass); border-radius: 14px; background: linear-gradient(180deg, var(--walnut-light), var(--walnut-dark)); box-shadow: 0 20px 65px #000b; text-align: center; }
+.spin-panel h2 { margin: 0; color: var(--brass-bright); font-size: 1.6rem; }
+.spin-panel p { margin: 0; opacity: .85; }
+#spin-ball-picker { position: relative; width: min(58vw, 220px); aspect-ratio: 1; border: 2px solid #b4aa98; border-radius: 50%; background: radial-gradient(circle at 34% 28%, #fff 0 10%, #f7f3e9 42%, #d1cabb 82%, #a59d8c 100%); box-shadow: inset -8px -10px 18px #6f695d55, 0 8px 24px #0008; touch-action: none; overflow: hidden; }
+.spin-ball-shine { position: absolute; top: 12%; left: 19%; width: 25%; height: 14%; border-radius: 50%; background: #fff9; filter: blur(5px); pointer-events: none; }
+#spin-dot { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; transform: translate(-50%,-50%); border-radius: 50%; background: #d42f23; border: 2px solid #8d160e; box-shadow: 0 2px 5px #0008; pointer-events: none; }
+.spin-readout { color: var(--cream); opacity: .76; font-size: .85rem; }
+#spin-done { max-width: 220px; padding: 11px 18px; }
+@media (pointer: coarse) { #spin-open { width: 40px; height: 40px; top: 50%; transform: translateY(-50%); } }
+
+@media (pointer: coarse) { #chip-1 { padding-right: 44px; } }
+
+#chip-1 { padding-right: 56px; }

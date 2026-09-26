@@ -70,6 +70,7 @@
         <span class="chip-label">Player 1 — open</span>
       </div>
       <div id="center-message"></div>
+      <button id="spin-open" type="button" aria-label="Set cue ball spin" title="Set cue ball spin"><span class="spin-ball-icon"><i></i></span></button>
       <div class="player-chip" id="chip-1">
         <span class="chip-dot open"></span>
         <span class="chip-label">Player 2 — open</span>
@@ -91,6 +92,17 @@
     </div>
   </section>
 
+  <div id="spin-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="spin-title">
+    <div class="spin-panel">
+      <h2 id="spin-title">Cue ball spin</h2>
+      <p>Move the red dot to choose where the cue strikes.</p>
+      <div id="spin-ball-picker" role="slider" aria-label="Cue ball contact point" aria-valuemin="-100" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+        <div class="spin-ball-shine"></div><div id="spin-dot"></div>
+      </div>
+      <div class="spin-readout">Center = no spin · Top = follow · Bottom = draw</div>
+      <button id="spin-done" class="btn" type="button">Done</button>
+    </div>
+  </div>
   <!-- ================= WINNER OVERLAY ================= -->
   <div id="winner-overlay" class="hidden">
     <div class="panel">

@@ -136,36 +136,6 @@ function resetGame() {
 function cueBall() { return G.balls.find(b => b.id === 'cue'); }
 function activeBalls() { return G.balls.filter(b => !b.potted); }
 
-const POCKET_JAWS = (() => {
-  const left = INNER.left, right = INNER.right, top = INNER.top, bottom = INNER.bottom;
-  const mid = RAIL + TABLE_W / 2, jaws = [];
-  // Angled cushion knuckles at each corner opening.
-  jaws.push([[left, RAIL + 39], [RAIL + 39, top]]);
-  jaws.push([[right, RAIL + 39], [RAIL + TABLE_W - 39, top]]);
-  jaws.push([[left, RAIL + TABLE_H - 39], [RAIL + 39, bottom]]);
-  jaws.push([[right, RAIL + TABLE_H - 39], [RAIL + TABLE_W - 39, bottom]]);
-  // Tapered jaws on the side pockets guide shallow approaches toward the mouth.
-  jaws.push([[mid - 36, top], [mid - 18, RAIL + 5]], [[mid + 36, top], [mid + 18, RAIL + 5]]);
-  jaws.push([[mid - 36, bottom], [mid - 18, RAIL + TABLE_H + 5]], [[mid + 36, bottom], [mid + 18, RAIL + TABLE_H + 5]]);
-  return jaws;
-})();
-function bouncePocketJaw(ball) {
-  for (const [start, end] of POCKET_JAWS) {
-    const sx = end[0] - start[0], sy = end[1] - start[1];
-    const t = Math.max(0, Math.min(1, ((ball.x - start[0]) * sx + (ball.y - start[1]) * sy) / (sx * sx + sy * sy)));
-    const px = start[0] + sx * t, py = start[1] + sy * t;
-    let dx = ball.x - px, dy = ball.y - py, dist = Math.hypot(dx, dy);
-    if (dist >= BALL_R || dist < 0.001) continue;
-    dx /= dist; dy /= dist;
-    const incoming = ball.vx * dx + ball.vy * dy;
-    if (incoming >= -0.03) continue;
-    ball.x += dx * (BALL_R - dist); ball.y += dy * (BALL_R - dist);
-    ball.vx -= (1 + 0.72) * incoming * dx; ball.vy -= (1 + 0.72) * incoming * dy;
-    playImpactSound('rail', Math.abs(incoming));
-    return true;
-  }
-  return false;
-}
 function playImpactSound(kind, speed) {
   const now = performance.now();
   if (speed > 1.8 && now - lastImpactSound > 65) { lastImpactSound = now; playSound(kind, speed); }
@@ -191,9 +161,7 @@ function stepPhysics() {
     for (const b of balls) {
       if (b.potted) continue;
       for (const p of POCKETS) {
-        const pocketDx = p.x - b.x, pocketDy = p.y - b.y, pocketDist = Math.hypot(pocketDx, pocketDy);
-        const rollingIntoMouth = b.vx * pocketDx + b.vy * pocketDy > -0.2;
-        if (pocketDist < POCKET_CAPTURE_R && (rollingIntoMouth || pocketDist < POCKET_R * 0.55)) {
+        if (Math.hypot(b.x - p.x, b.y - p.y) < POCKET_CAPTURE_R) {
           const speed = Math.hypot(b.vx, b.vy);
           b.potted = true;
           b.pocketing = { x: p.x, y: p.y, startX: b.x, startY: b.y, frame: 0, delay: speed < 2.1 ? 14 : 3, duration: 22, wobble: Math.random() * Math.PI * 2 };
@@ -205,10 +173,9 @@ function stepPhysics() {
       }
     }
 
-    // Pocket jaws and cushion bounce.
+    // Wall bounce.
     for (const b of balls) {
       if (b.potted) continue;
-      bouncePocketJaw(b);
       if (b.x < INNER.left) { b.x = INNER.left; b.vx = -b.vx * RESTITUTION_WALL; if (b.id === 'cue') b.vy += Math.abs(b.vx) * G.activeSpin.x * 0.1; playImpactSound('rail', Math.abs(b.vx)); }
       if (b.x > INNER.right) { b.x = INNER.right; b.vx = -b.vx * RESTITUTION_WALL; if (b.id === 'cue') b.vy -= Math.abs(b.vx) * G.activeSpin.x * 0.1; playImpactSound('rail', Math.abs(b.vx)); }
       if (b.y < INNER.top) { b.y = INNER.top; b.vy = -b.vy * RESTITUTION_WALL; if (b.id === 'cue') b.vx -= Math.abs(b.vy) * G.activeSpin.x * 0.1; playImpactSound('rail', Math.abs(b.vy)); }
@@ -429,28 +396,6 @@ const ctx = canvas.getContext('2d');
 canvas.width = CANVAS_W;
 canvas.height = CANVAS_H;
 
-function drawPocketMouth(p) {
-  const inwardX = CANVAS_W / 2 - p.x, inwardY = CANVAS_H / 2 - p.y;
-  const angle = Math.atan2(inwardY, inwardX) - Math.PI / 2;
-  const r = POCKET_R + 5;
-  ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(angle);
-  ctx.beginPath();
-  ctx.moveTo(-r, r * 0.35);
-  ctx.quadraticCurveTo(-r * 1.18, -r * 0.36, -r * 0.52, -r * 0.78);
-  ctx.quadraticCurveTo(0, -r * 1.02, r * 0.52, -r * 0.78);
-  ctx.quadraticCurveTo(r * 1.18, -r * 0.36, r, r * 0.35);
-  ctx.quadraticCurveTo(r * 0.65, r * 0.76, 0, r * 0.68);
-  ctx.quadraticCurveTo(-r * 0.65, r * 0.76, -r, r * 0.35);
-  ctx.closePath();
-  const well = ctx.createRadialGradient(0, -r * 0.25, 2, 0, -r * 0.1, r * 1.2);
-  well.addColorStop(0, '#020201'); well.addColorStop(0.72, '#070503'); well.addColorStop(1, '#29170c');
-  ctx.fillStyle = well; ctx.fill(); ctx.strokeStyle = '#c9a24b'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(0, -r * 0.2, r * 0.62, r * 0.38, 0, 0, Math.PI * 2);
-  ctx.fillStyle = '#010100'; ctx.fill();
-  ctx.strokeStyle = 'rgba(255,225,156,.38)'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(-r * 0.8, r * 0.31); ctx.quadraticCurveTo(0, r * 0.89, r * 0.8, r * 0.31); ctx.stroke();
-  ctx.restore();
-}
 function drawTable() {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
@@ -474,8 +419,16 @@ function drawTable() {
   ctx.lineWidth = 3;
   ctx.strokeRect(RAIL, RAIL, TABLE_W, TABLE_H);
 
-  // Sculpted pocket throats: flared felt-side mouths taper into a dark well.
-  for (const p of POCKETS) drawPocketMouth(p);
+  // Pockets
+  for (const p of POCKETS) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, POCKET_R, 0, Math.PI * 2);
+    ctx.fillStyle = '#050302';
+    ctx.fill();
+    ctx.strokeStyle = '#c9a24b';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
   // Highlight the legal cue-ball placement area during a free ball.
   if (typeof canPlaceCue === 'function' && canPlaceCue()) {
     ctx.fillStyle = 'rgba(230,200,119,0.08)';
